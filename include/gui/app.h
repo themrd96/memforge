@@ -17,6 +17,7 @@ void DrawProcessSelector(class App& app);
 void DrawScanner(class App& app);
 void DrawSpeedHack(class App& app);
 void DrawHexViewer(class App& app);
+void DrawStealth(class App& app);
 
 class App {
 public:
@@ -65,6 +66,7 @@ public:
     bool showScanner = true;
     bool showSpeedHack = true;
     bool showHexViewer = false;
+    bool showStealth = false;
     bool showAbout = false;
 
     // Methods

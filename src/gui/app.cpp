@@ -171,6 +171,7 @@ void App::DrawMenuBar() {
             ImGui::MenuItem("Scanner", nullptr, &showScanner);
             ImGui::MenuItem("Speed Hack", nullptr, &showSpeedHack);
             ImGui::MenuItem("Hex Viewer", nullptr, &showHexViewer);
+            ImGui::MenuItem("Stealth Mode", nullptr, &showStealth);
             ImGui::EndMenu();
         }
 
@@ -369,6 +370,7 @@ int App::Run() {
         if (showScanner) DrawScanner(*this);
         if (showSpeedHack) DrawSpeedHack(*this);
         if (showHexViewer) DrawHexViewer(*this);
+        if (showStealth) DrawStealth(*this);
 
         DrawAboutWindow();
         DrawStatusBar();

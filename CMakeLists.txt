@@ -29,9 +29,10 @@ add_library(memforge_core STATIC
     src/core/memory_scanner.cpp
     src/core/memory_writer.cpp
     src/core/value_freezer.cpp
+    src/core/stealth.cpp
 )
 target_include_directories(memforge_core PUBLIC ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(memforge_core PUBLIC psapi)
+target_link_libraries(memforge_core PUBLIC psapi dwmapi)
 
 # ─── Speedhack DLL (injected into target) ───
 if(MEMFORGE_BUILD_SPEEDHACK)
@@ -55,6 +56,7 @@ add_executable(MemForge WIN32
     src/gui/ui_scanner.cpp
     src/gui/ui_speed_hack.cpp
     src/gui/ui_hex_viewer.cpp
+    src/gui/ui_stealth.cpp
 )
 target_include_directories(MemForge PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(MemForge PRIVATE memforge_core imgui dwmapi)

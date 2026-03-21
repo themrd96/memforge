@@ -22,6 +22,16 @@ A modern memory scanner and game tool — a better Cheat Engine, built from scra
 - **Shared memory control** — Real-time speed adjustment without re-injection
 - **Preset buttons** — Quick access to common speeds (0.25x, 0.5x, 1x, 2x, 5x, 10x)
 
+### Stealth Mode
+- **Process name randomization** — Relaunch with a name like `svchost.exe` or `RuntimeBroker.exe`
+- **Window title spoofing** — Title changes to look like a legitimate Windows service
+- **PE header wiping** — Clears executable signature from memory to block signature scans
+- **Taskbar & Alt+Tab hiding** — Disappears from casual observation
+- **Window enumeration cloaking** — Hidden from EnumWindows-based detection
+- **Mutex cleanup** — No identifiable named objects
+- **Detection dashboard** — Live monitoring for debuggers and anti-cheat tools
+- **Speedhack DLL also renamed** — The injected DLL gets a random name too
+
 ### Modern UI
 - **Dear ImGui + DirectX 11** — Hardware-accelerated, responsive UI
 - **Dockable panels** — Rearrange windows however you like
@@ -41,7 +51,7 @@ A modern memory scanner and game tool — a better Cheat Engine, built from scra
 
 ```batch
 # 1. Clone the repo
-git clone https://github.com/YOUR_USERNAME/memforge.git
+git clone https://github.com/themrd96/memforge.git
 cd memforge
 
 # 2. Run setup (downloads ImGui)
@@ -104,7 +114,8 @@ memforge/
 │   │   ├── process_manager.h    # Process enumeration and management
 │   │   ├── memory_scanner.h     # Multi-threaded memory scanning engine
 │   │   ├── memory_writer.h      # Memory write operations
-│   │   └── value_freezer.h      # Value freezing (background write loop)
+│   │   ├── value_freezer.h      # Value freezing (background write loop)
+│   │   └── stealth.h            # Anti-detection and process cloaking
 │   ├── speedhack/
 │   │   └── speedhack.h          # Speed hack controller (host side)
 │   └── gui/
@@ -121,7 +132,8 @@ memforge/
 │       ├── ui_process_selector.cpp   # Process list panel
 │       ├── ui_scanner.cpp            # Scanner + frozen values panel
 │       ├── ui_speed_hack.cpp         # Speed hack controls
-│       └── ui_hex_viewer.cpp         # Hex memory viewer
+│       ├── ui_hex_viewer.cpp         # Hex memory viewer
+│       └── ui_stealth.cpp            # Stealth mode panel
 └── scripts/
     ├── setup.bat                # Downloads dependencies
     └── build.bat                # Builds the project
