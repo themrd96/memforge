@@ -1,3 +1,4 @@
+#define NOMINMAX
 #include "core/memory_scanner.h"
 #include <cstring>
 #include <cmath>

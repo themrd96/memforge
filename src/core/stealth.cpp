@@ -1,5 +1,6 @@
 #include "core/stealth.h"
 #include "core/process_manager.h"
+#include <Windows.h>
 #include <TlHelp32.h>
 #include <dwmapi.h>
 #include <filesystem>
