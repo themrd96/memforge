@@ -14,6 +14,9 @@
 #include "core/lua_engine.h"
 #include "core/engine_detector.h"
 #include "core/packet_inspector.h"
+#include "core/aob_scanner.h"
+#include "core/hotkey_manager.h"
+#include "core/trainer_builder.h"
 #include "speedhack/speedhack.h"
 
 namespace memforge {
@@ -28,6 +31,9 @@ void DrawStructureDissector(class App& app);
 void DrawPointerScanner(class App& app);
 void DrawScriptEditor(class App& app);
 void DrawNetwork(class App& app);
+void DrawAobScanner(class App& app);
+void DrawHotkeys(class App& app);
+void DrawTrainerBuilder(class App& app);
 
 class App {
 public:
@@ -104,6 +110,24 @@ public:
     std::string currentTablePath;
     bool tableModified = false;
 
+    // AOB Scanner
+    AobScanner aobScanner;
+    char aobPatternInput[512] = {};
+    float aobScanProgress = 0.0f;
+    size_t aobResultCount = 0;
+
+    // Hotkey Manager
+    HotkeyManager hotkeyManager;
+
+    // Trainer Builder
+    std::vector<TrainerCheat> trainerCheats;
+    char trainerGameName[256] = {};
+    char trainerGameExe[256] = {};
+    char trainerName[256] = {};
+    char trainerAuthor[256] = {};
+    char trainerOutputPath[512] = {};
+    std::string trainerBuildLog;
+
     // UI state
     bool showProcessSelector = true;
     bool showScanner = true;
@@ -115,6 +139,9 @@ public:
     bool showPointerScanner = false;
     bool showScriptEditor = false;
     bool showNetwork = false;
+    bool showAobScanner = false;
+    bool showHotkeys = false;
+    bool showTrainerBuilder = false;
 
     // Methods
     void AttachToProcess(DWORD pid);

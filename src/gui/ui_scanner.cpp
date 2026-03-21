@@ -114,7 +114,7 @@ void DrawScanner(App& app) {
     ImGui::Separator();
 
     auto& results = app.scanner.GetResults();
-    size_t displayCount = std::min(results.size(), (size_t)5000);
+    size_t displayCount = (std::min)(results.size(), (size_t)5000);
 
     if (displayCount < results.size()) {
         ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f),
@@ -149,17 +149,26 @@ void DrawScanner(App& app) {
                 snprintf(addrStr, sizeof(addrStr), "0x%llX",
                         (unsigned long long)r.address);
                 ImGui::TextUnformatted(addrStr);
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                    ImGui::SetClipboardText(addrStr);
+                }
 
                 // Current value (re-read live)
                 ImGui::TableNextColumn();
                 ScanValue liveVal = app.scanner.ReadValue(r.address, vt);
                 std::string valStr = MemoryScanner::ValueToString(liveVal, vt);
                 ImGui::TextUnformatted(valStr.c_str());
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                    ImGui::SetClipboardText(valStr.c_str());
+                }
 
                 // Previous value
                 ImGui::TableNextColumn();
                 std::string prevStr = MemoryScanner::ValueToString(r.previousValue, vt);
                 ImGui::TextDisabled("%s", prevStr.c_str());
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                    ImGui::SetClipboardText(prevStr.c_str());
+                }
 
                 // Add to frozen list button
                 ImGui::TableNextColumn();
@@ -170,13 +179,20 @@ void DrawScanner(App& app) {
                                         addrStr);
                 }
 
-                // Right-click menu
+                // Right-click menu on row
                 char popupId[64];
                 snprintf(popupId, sizeof(popupId), "ctx_%d", row);
                 if (ImGui::BeginPopupContextItem(popupId)) {
                     if (ImGui::MenuItem("Copy Address")) {
                         ImGui::SetClipboardText(addrStr);
                     }
+                    if (ImGui::MenuItem("Copy Value")) {
+                        ImGui::SetClipboardText(valStr.c_str());
+                    }
+                    if (ImGui::MenuItem("Copy Previous Value")) {
+                        ImGui::SetClipboardText(prevStr.c_str());
+                    }
+                    ImGui::Separator();
                     if (ImGui::MenuItem("View in Hex Viewer")) {
                         app.hexViewAddress = r.address;
                         snprintf(app.hexAddrInput, sizeof(app.hexAddrInput),

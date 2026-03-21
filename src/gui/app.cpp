@@ -218,6 +218,10 @@ void App::DrawMenuBar() {
             ImGui::MenuItem("Pointer Scanner", nullptr, &showPointerScanner);
             ImGui::MenuItem("Script Editor", nullptr, &showScriptEditor);
             ImGui::MenuItem("Network Inspector", nullptr, &showNetwork);
+            ImGui::Separator();
+            ImGui::MenuItem("AOB Scanner", nullptr, &showAobScanner);
+            ImGui::MenuItem("Hotkeys", nullptr, &showHotkeys);
+            ImGui::MenuItem("Trainer Builder", nullptr, &showTrainerBuilder);
             ImGui::EndMenu();
         }
 
@@ -391,6 +395,40 @@ int App::Run() {
     ImGui_ImplWin32_Init(m_hwnd);
     ImGui_ImplDX11_Init(m_device, m_deviceContext);
 
+    // Setup hotkey manager
+    hotkeyManager.SetHwnd(m_hwnd);
+    hotkeyManager.SetCallback([this](const Hotkey& hk) {
+        switch (hk.action) {
+            case HotkeyAction::ToggleFreeze:
+                if (hk.freezeId >= 0) {
+                    freezer.ToggleEntry(hk.freezeId);
+                }
+                break;
+            case HotkeyAction::RunScript:
+                if (!hk.scriptCode.empty()) {
+                    luaEngine.Execute(hk.scriptCode);
+                }
+                break;
+            case HotkeyAction::SetSpeed:
+                speedValue = hk.speedValue;
+                if (speedHack.IsInjected()) {
+                    speedHack.SetSpeed(speedValue);
+                }
+                break;
+            case HotkeyAction::ToggleSpeedHack:
+                speedHackEnabled = !speedHackEnabled;
+                if (speedHackEnabled && !speedHack.IsInjected()) {
+                    speedHack.Inject(targetPid);
+                    speedHack.SetSpeed(speedValue);
+                } else if (!speedHackEnabled && speedHack.IsInjected()) {
+                    speedHack.SetSpeed(1.0f);
+                }
+                break;
+            default:
+                break;
+        }
+    });
+
     // Initial process list
     RefreshProcessList();
 
@@ -437,6 +475,9 @@ int App::Run() {
         if (showPointerScanner) DrawPointerScanner(*this);
         if (showScriptEditor) DrawScriptEditor(*this);
         if (showNetwork) DrawNetwork(*this);
+        if (showAobScanner) DrawAobScanner(*this);
+        if (showHotkeys) DrawHotkeys(*this);
+        if (showTrainerBuilder) DrawTrainerBuilder(*this);
 
         DrawAboutWindow();
         DrawStatusBar();

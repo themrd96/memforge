@@ -82,6 +82,9 @@ add_library(memforge_core STATIC
     src/core/cheat_table.cpp
     src/core/engine_detector.cpp
     src/core/packet_inspector.cpp
+    src/core/aob_scanner.cpp
+    src/core/hotkey_manager.cpp
+    src/core/trainer_builder.cpp
 )
 target_include_directories(memforge_core PUBLIC ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(memforge_core PUBLIC psapi dwmapi lua54 iphlpapi ws2_32)
@@ -113,6 +116,9 @@ add_executable(MemForge WIN32
     src/gui/ui_pointer_scanner.cpp
     src/gui/ui_script_editor.cpp
     src/gui/ui_network.cpp
+    src/gui/ui_aob_scanner.cpp
+    src/gui/ui_hotkeys.cpp
+    src/gui/ui_trainer_builder.cpp
 )
 target_include_directories(MemForge PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(MemForge PRIVATE memforge_core imgui dwmapi)
