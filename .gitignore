@@ -1,0 +1,27 @@
+# Build output
+build/
+out/
+cmake-build-*/
+*.obj
+*.o
+*.lib
+*.a
+*.pdb
+*.ilk
+*.exp
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+*.sln.docstates
+CMakeSettings.json
+
+# ImGui (downloaded by setup script)
+libs/imgui/
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
