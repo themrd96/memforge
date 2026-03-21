@@ -1,6 +1,6 @@
 @echo off
 REM MemForge - Build Script
-REM Auto-detects Visual Studio version
+REM Auto-detects any Visual Studio version
 
 echo ================================
 echo  MemForge Build
@@ -15,18 +15,24 @@ if not exist "libs\imgui\imgui.h" (
     call scripts\setup.bat
 )
 
-REM ─── Auto-detect Visual Studio version ───
+REM ─── Auto-detect Visual Studio ───
 set "GENERATOR="
 
-REM Check for VS 2022
-where /Q cl 2>nul
-cmake -G "Visual Studio 17 2022" -A x64 --check-system-vars >nul 2>&1
-if %ERRORLEVEL% equ 0 (
-    set "GENERATOR=Visual Studio 17 2022"
+REM Check for VS 2026 (v18)
+if exist "%ProgramFiles%\Microsoft Visual Studio\2026" (
+    set "GENERATOR=Visual Studio 18 2026"
+    goto :found
+)
+if exist "%ProgramFiles(x86)%\Microsoft Visual Studio\2026" (
+    set "GENERATOR=Visual Studio 18 2026"
+    goto :found
+)
+if exist "%ProgramFiles(x86)%\Microsoft Visual Studio\18" (
+    set "GENERATOR=Visual Studio 18 2026"
     goto :found
 )
 
-REM Check common VS 2022 paths
+REM Check for VS 2022 (v17)
 if exist "%ProgramFiles%\Microsoft Visual Studio\2022" (
     set "GENERATOR=Visual Studio 17 2022"
     goto :found
@@ -36,7 +42,7 @@ if exist "%ProgramFiles(x86)%\Microsoft Visual Studio\2022" (
     goto :found
 )
 
-REM Check for VS 2019
+REM Check for VS 2019 (v16)
 if exist "%ProgramFiles%\Microsoft Visual Studio\2019" (
     set "GENERATOR=Visual Studio 16 2019"
     goto :found
@@ -46,22 +52,11 @@ if exist "%ProgramFiles(x86)%\Microsoft Visual Studio\2019" (
     goto :found
 )
 
-REM Check for VS Build Tools 2022
-if exist "%ProgramFiles(x86)%\Microsoft Visual Studio\2022\BuildTools" (
-    set "GENERATOR=Visual Studio 17 2022"
-    goto :found
-)
-
-REM Check for VS Build Tools 2019
-if exist "%ProgramFiles(x86)%\Microsoft Visual Studio\2019\BuildTools" (
-    set "GENERATOR=Visual Studio 16 2019"
-    goto :found
-)
-
-REM Try Ninja as fallback (works with any compiler)
-where /Q ninja 2>nul
+REM ─── Fallback: try Ninja if 'cl' is available (Developer Command Prompt) ───
+where /Q cl
 if %ERRORLEVEL% equ 0 (
-    echo No Visual Studio found, trying Ninja...
+    echo Visual Studio directory not found in standard paths.
+    echo But 'cl' compiler is available - using Ninja generator.
     set "GENERATOR=Ninja"
     goto :found_ninja
 )
@@ -70,13 +65,8 @@ REM Nothing found
 echo.
 echo ERROR: Could not find Visual Studio or a C++ compiler.
 echo.
-echo Please install one of these (free):
-echo   1. Visual Studio 2022 Community: https://visualstudio.microsoft.com/vs/community/
-echo      - Select "Desktop development with C++" workload
-echo   2. Visual Studio 2019 Community (if you prefer older)
-echo   3. Visual Studio Build Tools: https://visualstudio.microsoft.com/visual-cpp-build-tools/
-echo.
-echo After installing, run this script again.
+echo Please install Visual Studio with the C++ workload,
+echo or run this script from the Developer Command Prompt.
 pause
 exit /b 1
 
@@ -88,23 +78,30 @@ echo [1/2] Configuring with CMake...
 cmake -B build -G "%GENERATOR%" -A x64
 if %ERRORLEVEL% neq 0 (
     echo.
-    echo CMake configuration failed with %GENERATOR%.
-    echo Trying without specifying architecture...
-    cmake -B build -G "%GENERATOR%"
-    if %ERRORLEVEL% neq 0 (
-        echo.
-        echo ERROR: CMake configuration failed.
-        pause
-        exit /b 1
+    echo Generator "%GENERATOR%" failed.
+    echo Falling back to Ninja...
+    where /Q cl
+    if %ERRORLEVEL% equ 0 (
+        goto :found_ninja
     )
+    echo ERROR: CMake configuration failed.
+    pause
+    exit /b 1
 )
 goto :build
 
 :found_ninja
-echo [1/2] Configuring with Ninja...
+echo Using Ninja generator with available compiler...
+echo.
+if not exist build mkdir build
+echo [1/2] Configuring with CMake (Ninja)...
 cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
 if %ERRORLEVEL% neq 0 (
+    echo.
     echo ERROR: CMake configuration failed.
+    echo.
+    echo Try running this from the Developer Command Prompt for VS.
+    echo Search "Developer Command Prompt" in the Start menu.
     pause
     exit /b 1
 )
