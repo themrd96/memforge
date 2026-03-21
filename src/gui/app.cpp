@@ -418,7 +418,7 @@ int App::Run() {
             case HotkeyAction::ToggleSpeedHack:
                 speedHackEnabled = !speedHackEnabled;
                 if (speedHackEnabled && !speedHack.IsInjected()) {
-                    speedHack.Inject(targetPid);
+                    speedHack.Inject(targetProcess, targetPid);
                     speedHack.SetSpeed(speedValue);
                 } else if (!speedHackEnabled && speedHack.IsInjected()) {
                     speedHack.SetSpeed(1.0f);
