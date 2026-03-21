@@ -143,43 +143,50 @@ void DrawScanner(App& app) {
                 auto& r = results[row];
                 ImGui::TableNextRow();
 
-                // Address
+                ImGui::PushID(row);
+
+                // Address — clickable to copy
                 ImGui::TableNextColumn();
                 char addrStr[32];
                 snprintf(addrStr, sizeof(addrStr), "0x%llX",
                         (unsigned long long)r.address);
-                ImGui::TextUnformatted(addrStr);
-                if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                if (ImGui::Selectable(addrStr, false, ImGuiSelectableFlags_None)) {
                     ImGui::SetClipboardText(addrStr);
                 }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Click to copy address");
+                }
 
-                // Current value (re-read live)
+                // Current value — clickable to copy
                 ImGui::TableNextColumn();
                 ScanValue liveVal = app.scanner.ReadValue(r.address, vt);
                 std::string valStr = MemoryScanner::ValueToString(liveVal, vt);
-                ImGui::TextUnformatted(valStr.c_str());
-                if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                if (ImGui::Selectable(valStr.c_str(), false, ImGuiSelectableFlags_None)) {
                     ImGui::SetClipboardText(valStr.c_str());
                 }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Click to copy value");
+                }
 
-                // Previous value
+                // Previous value — clickable to copy
                 ImGui::TableNextColumn();
                 std::string prevStr = MemoryScanner::ValueToString(r.previousValue, vt);
-                ImGui::TextDisabled("%s", prevStr.c_str());
-                if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                char prevLabel[128];
+                snprintf(prevLabel, sizeof(prevLabel), "%s##prev%d", prevStr.c_str(), row);
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+                if (ImGui::Selectable(prevLabel, false, ImGuiSelectableFlags_None)) {
                     ImGui::SetClipboardText(prevStr.c_str());
                 }
+                ImGui::PopStyleColor();
 
                 // Add to frozen list button
                 ImGui::TableNextColumn();
-                char btnId[64];
-                snprintf(btnId, sizeof(btnId), "Add##%d", row);
-                if (ImGui::SmallButton(btnId)) {
+                if (ImGui::SmallButton("Add")) {
                     app.freezer.AddEntry(r.address, liveVal, vt,
                                         addrStr);
                 }
 
-                // Right-click menu on row
+                // Right-click context menu on the whole row
                 char popupId[64];
                 snprintf(popupId, sizeof(popupId), "ctx_%d", row);
                 if (ImGui::BeginPopupContextItem(popupId)) {
@@ -199,11 +206,18 @@ void DrawScanner(App& app) {
                                 "%llX", (unsigned long long)r.address);
                         app.showHexViewer = true;
                     }
+                    if (ImGui::MenuItem("View in Structure Dissector")) {
+                        snprintf(app.structAddrInput, sizeof(app.structAddrInput),
+                                "%llX", (unsigned long long)r.address);
+                        app.showStructDissector = true;
+                    }
                     if (ImGui::MenuItem("Add to Frozen List")) {
                         app.freezer.AddEntry(r.address, liveVal, vt, addrStr);
                     }
                     ImGui::EndPopup();
                 }
+
+                ImGui::PopID();
             }
         }
 
