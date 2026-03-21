@@ -1,8 +1,13 @@
-#include "core/stealth.h"
-#include "core/process_manager.h"
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 #include <Windows.h>
+#undef WIN32_LEAN_AND_MEAN
 #include <TlHelp32.h>
 #include <dwmapi.h>
+
+#include "core/stealth.h"
+#include "core/process_manager.h"
 #include <filesystem>
 #include <algorithm>
 #include <chrono>
@@ -318,12 +323,17 @@ StealthManager::DetectionStatus StealthManager::CheckForDetection() {
 
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot != INVALID_HANDLE_VALUE) {
-        PROCESSENTRY32A pe = {};
+        PROCESSENTRY32W pe = {};
         pe.dwSize = sizeof(pe);
 
-        if (Process32FirstA(snapshot, &pe)) {
+        if (Process32FirstW(snapshot, &pe)) {
             do {
-                std::string procName = pe.szExeFile;
+                // Convert wide string to narrow for comparison
+                char narrowName[MAX_PATH] = {};
+                WideCharToMultiByte(CP_UTF8, 0, pe.szExeFile, -1,
+                                    narrowName, MAX_PATH, nullptr, nullptr);
+
+                std::string procName = narrowName;
                 std::string procLower = procName;
                 std::transform(procLower.begin(), procLower.end(),
                              procLower.begin(), ::tolower);
@@ -337,7 +347,7 @@ StealthManager::DetectionStatus StealthManager::CheckForDetection() {
                         status.detectedTools.push_back(procName);
                     }
                 }
-            } while (Process32NextA(snapshot, &pe));
+            } while (Process32NextW(snapshot, &pe));
         }
         CloseHandle(snapshot);
     }
