@@ -109,7 +109,7 @@ void DrawScanner(App& app) {
 
     // ─── Results table (left) ────────────────────────────
 
-    ImGui::BeginChild("ResultsPanel", ImVec2(resultsWidth, 0), ImGuiChildFlags_Border);
+    ImGui::BeginChild("ResultsPanel", ImVec2(resultsWidth, 0), ImGuiChildFlags_Borders);
     ImGui::Text("Scan Results");
     ImGui::Separator();
 
@@ -199,7 +199,7 @@ void DrawScanner(App& app) {
 
     // ─── Frozen values panel (right) ─────────────────────
 
-    ImGui::BeginChild("FrozenPanel", ImVec2(frozenWidth, 0), ImGuiChildFlags_Border);
+    ImGui::BeginChild("FrozenPanel", ImVec2(frozenWidth, 0), ImGuiChildFlags_Borders);
     ImGui::Text("Frozen Values");
     ImGui::Separator();
 
