@@ -85,31 +85,50 @@ void DrawPointerScanner(App& app) {
             auto& path = results[i];
             ImGui::TableNextRow();
 
+            ImGui::PushID(static_cast<int>(i));
+
             // Module
             ImGui::TableSetColumnIndex(0);
             ImGui::TextUnformatted(path.moduleName.c_str());
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                ImGui::SetClipboardText(path.moduleName.c_str());
+            }
 
             // Base Offset
             ImGui::TableSetColumnIndex(1);
-            ImGui::Text("0x%llX", static_cast<unsigned long long>(path.baseAddress));
+            char baseStr[32];
+            snprintf(baseStr, sizeof(baseStr), "0x%llX", static_cast<unsigned long long>(path.baseAddress));
+            ImGui::TextUnformatted(baseStr);
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                ImGui::SetClipboardText(baseStr);
+            }
 
             // Path
             ImGui::TableSetColumnIndex(2);
-            std::ostringstream pathStr;
-            for (size_t j = 0; j < path.offsets.size(); j++) {
-                if (j > 0) pathStr << " -> ";
-                pathStr << "0x" << std::hex << path.offsets[j];
+            std::string fullPath = path.ToString();
+            ImGui::TextUnformatted(fullPath.c_str());
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                ImGui::SetClipboardText(fullPath.c_str());
             }
-            ImGui::TextUnformatted(pathStr.str().c_str());
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Right-click to copy full path");
+            }
 
             // Resolved
             ImGui::TableSetColumnIndex(3);
             if (app.processAttached) {
                 uintptr_t resolved = path.Resolve(app.targetProcess);
-                ImGui::Text("0x%llX", static_cast<unsigned long long>(resolved));
+                char resolvedStr[32];
+                snprintf(resolvedStr, sizeof(resolvedStr), "0x%llX", static_cast<unsigned long long>(resolved));
+                ImGui::TextUnformatted(resolvedStr);
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                    ImGui::SetClipboardText(resolvedStr);
+                }
             } else {
                 ImGui::TextDisabled("N/A");
             }
+
+            ImGui::PopID();
         }
 
         ImGui::EndTable();

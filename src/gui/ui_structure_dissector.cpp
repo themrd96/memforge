@@ -98,7 +98,15 @@ void DrawStructureDissector(App& app) {
 
             // Offset
             ImGui::TableSetColumnIndex(0);
-            ImGui::Text("0x%04zX", field.offset);
+            char offsetStr[32];
+            snprintf(offsetStr, sizeof(offsetStr), "0x%04zX", field.offset);
+            ImGui::TextUnformatted(offsetStr);
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                ImGui::SetClipboardText(offsetStr);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Right-click to copy");
+            }
 
             // Type (combo)
             ImGui::TableSetColumnIndex(1);
@@ -129,6 +137,12 @@ void DrawStructureDissector(App& app) {
                 std::string val = app.structDissector.FormatFieldValue(
                     app.currentStruct.baseAddress, field);
                 ImGui::TextUnformatted(val.c_str());
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                    ImGui::SetClipboardText(val.c_str());
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Right-click to copy");
+                }
             } else {
                 ImGui::TextDisabled("N/A");
             }
@@ -139,6 +153,12 @@ void DrawStructureDissector(App& app) {
                 std::string hex = app.structDissector.FormatFieldHex(
                     app.currentStruct.baseAddress, field);
                 ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "%s", hex.c_str());
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                    ImGui::SetClipboardText(hex.c_str());
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Right-click to copy");
+                }
             } else {
                 ImGui::TextDisabled("--");
             }
