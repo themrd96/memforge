@@ -1,9 +1,11 @@
 #include "gui/app.h"
+#include "core/cheat_table.h"
 #include <imgui.h>
 #include <imgui_impl_win32.h>
 #include <imgui_impl_dx11.h>
 #include <thread>
 #include <sstream>
+#include <fstream>
 
 namespace memforge {
 
@@ -41,6 +43,13 @@ void App::AttachToProcess(DWORD pid) {
     writer.Attach(targetProcess);
     freezer.Attach(targetProcess);
     freezer.Start();
+
+    // Initialize Lua engine with new process
+    luaEngine.Initialize(targetProcess, targetPid);
+
+    // Detect game engine
+    detectedEngine = EngineDetector::Detect(targetProcess, targetPid);
+    engineDetected = (detectedEngine.engine != GameEngine::Unknown);
 }
 
 void App::DetachFromProcess() {
@@ -50,6 +59,16 @@ void App::DetachFromProcess() {
     if (speedHack.IsInjected()) {
         speedHack.Eject();
     }
+
+    // Shutdown Lua engine
+    luaEngine.Shutdown();
+
+    // Stop network monitoring
+    packetInspector.StopMonitoring();
+
+    // Reset engine detection
+    engineDetected = false;
+    detectedEngine = {};
 
     freezer.Stop();
     freezer.Detach();
@@ -160,6 +179,28 @@ void App::DrawMenuBar() {
                 RefreshProcessList();
             }
             ImGui::Separator();
+            if (ImGui::MenuItem("Save Table", "Ctrl+S")) {
+                if (!currentTablePath.empty()) {
+                    SaveTable(currentTablePath);
+                } else {
+                    // Will use a simple path input
+                    currentTablePath = "memforge_table.mft";
+                    SaveTable(currentTablePath);
+                }
+            }
+            if (ImGui::MenuItem("Save Table As...")) {
+                // Simple approach: save to a default filename
+                currentTablePath = "memforge_table.mft";
+                SaveTable(currentTablePath);
+            }
+            if (ImGui::MenuItem("Load Table", "Ctrl+O")) {
+                if (!currentTablePath.empty()) {
+                    LoadTable(currentTablePath);
+                } else {
+                    LoadTable("memforge_table.mft");
+                }
+            }
+            ImGui::Separator();
             if (ImGui::MenuItem("Exit", "Alt+F4")) {
                 PostQuitMessage(0);
             }
@@ -172,6 +213,11 @@ void App::DrawMenuBar() {
             ImGui::MenuItem("Speed Hack", nullptr, &showSpeedHack);
             ImGui::MenuItem("Hex Viewer", nullptr, &showHexViewer);
             ImGui::MenuItem("Stealth Mode", nullptr, &showStealth);
+            ImGui::Separator();
+            ImGui::MenuItem("Structure Dissector", nullptr, &showStructDissector);
+            ImGui::MenuItem("Pointer Scanner", nullptr, &showPointerScanner);
+            ImGui::MenuItem("Script Editor", nullptr, &showScriptEditor);
+            ImGui::MenuItem("Network Inspector", nullptr, &showNetwork);
             ImGui::EndMenu();
         }
 
@@ -248,6 +294,16 @@ void App::DrawStatusBar() {
             ImGui::Text("Results: %zu", scanner.GetResultCount());
         } else {
             ImGui::Text("Ready");
+        }
+
+        // Engine badge
+        ImGui::SameLine(ImGui::GetWindowWidth() - 450);
+        if (engineDetected) {
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
+                             "[%s]", detectedEngine.engineName.c_str());
+            if (ImGui::IsItemHovered() && !detectedEngine.notes.empty()) {
+                ImGui::SetTooltip("%s", detectedEngine.notes.c_str());
+            }
         }
 
         ImGui::SameLine(ImGui::GetWindowWidth() - 250);
@@ -377,6 +433,10 @@ int App::Run() {
         if (showSpeedHack) DrawSpeedHack(*this);
         if (showHexViewer) DrawHexViewer(*this);
         if (showStealth) DrawStealth(*this);
+        if (showStructDissector) DrawStructureDissector(*this);
+        if (showPointerScanner) DrawPointerScanner(*this);
+        if (showScriptEditor) DrawScriptEditor(*this);
+        if (showNetwork) DrawNetwork(*this);
 
         DrawAboutWindow();
         DrawStatusBar();
@@ -399,6 +459,65 @@ int App::Run() {
     DestroyWindow(m_hwnd);
 
     return 0;
+}
+
+// ─── Cheat Table Save/Load ───────────────────────────────
+
+void App::SaveTable(const std::string& path) {
+    CheatTable table;
+    table.gameName = targetName;
+    table.gameExe = targetName;
+    table.description = "MemForge cheat table";
+    table.author = "MemForge";
+    table.version = "1.0";
+
+    // Save frozen values
+    table.frozenValues = freezer.GetEntries();
+
+    // Save current structure if any
+    if (!currentStruct.fields.empty()) {
+        table.structures.push_back(currentStruct);
+    }
+
+    // Save pointer scan results
+    table.pointerPaths = pointerScanner.GetResults();
+
+    // Save current script
+    if (scriptEditorText[0] != '\0') {
+        CheatTable::SavedScript script;
+        script.name = "Main Script";
+        script.code = scriptEditorText;
+        table.scripts.push_back(script);
+    }
+
+    table.SaveToFile(path);
+    currentTablePath = path;
+    tableModified = false;
+}
+
+void App::LoadTable(const std::string& path) {
+    auto table = CheatTable::LoadFromFile(path);
+    if (!table) return;
+
+    // Restore frozen values
+    for (auto& fv : table->frozenValues) {
+        freezer.AddEntry(fv.address, fv.value, fv.type, fv.description);
+    }
+
+    // Restore first structure
+    if (!table->structures.empty()) {
+        currentStruct = table->structures[0];
+    }
+
+    // Restore first script
+    if (!table->scripts.empty()) {
+        strncpy(scriptEditorText, table->scripts[0].code.c_str(),
+                sizeof(scriptEditorText) - 1);
+        scriptEditorText[sizeof(scriptEditorText) - 1] = '\0';
+    }
+
+    currentTablePath = path;
+    tableModified = false;
 }
 
 } // namespace memforge
