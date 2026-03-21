@@ -6,6 +6,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+# Prevent Windows.h from defining min/max macros
+add_definitions(-DNOMINMAX -DWIN32_LEAN_AND_MEAN)
+
 # ─── Options ───
 option(MEMFORGE_BUILD_SPEEDHACK "Build speedhack DLL" ON)
 

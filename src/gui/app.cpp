@@ -285,7 +285,9 @@ int App::Run() {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+#ifdef ImGuiConfigFlags_DockingEnable
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+#endif
 
     // Dark theme with custom colors
     ImGui::StyleColorsDark();
@@ -359,9 +361,13 @@ int App::Run() {
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
-        // Enable dockspace
-        ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
-                                     ImGuiDockNodeFlags_PassthruCentralNode);
+        // Enable dockspace (only available in ImGui docking branch)
+#ifdef ImGuiConfigFlags_DockingEnable
+        if (io.ConfigFlags & ImGuiConfigFlags_DockingEnable) {
+            ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
+                                         ImGuiDockNodeFlags_PassthruCentralNode);
+        }
+#endif
 
         // Draw UI
         DrawMenuBar();

@@ -30,7 +30,7 @@ REM Download Dear ImGui
 echo [1/2] Downloading Dear ImGui...
 if not exist "%~dp0..\libs\imgui\imgui.h" (
     cd /d "%~dp0.."
-    git clone --depth 1 --branch v1.91.8 https://github.com/ocornut/imgui.git libs\imgui
+    git clone --depth 1 --branch docking https://github.com/ocornut/imgui.git libs\imgui
     if %ERRORLEVEL% neq 0 (
         echo ERROR: Failed to clone ImGui.
         pause
