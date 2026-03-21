@@ -222,6 +222,10 @@ void App::DrawMenuBar() {
             ImGui::MenuItem("AOB Scanner", nullptr, &showAobScanner);
             ImGui::MenuItem("Hotkeys", nullptr, &showHotkeys);
             ImGui::MenuItem("Trainer Builder", nullptr, &showTrainerBuilder);
+            ImGui::Separator();
+            ImGui::MenuItem("Memory Snapshots", nullptr, &showSnapshots);
+            ImGui::MenuItem("Undo History", nullptr, &showUndoHistory);
+            ImGui::MenuItem("Anti-Anti-Cheat", nullptr, &showAntiCheat);
             ImGui::EndMenu();
         }
 
@@ -478,6 +482,9 @@ int App::Run() {
         if (showAobScanner) DrawAobScanner(*this);
         if (showHotkeys) DrawHotkeys(*this);
         if (showTrainerBuilder) DrawTrainerBuilder(*this);
+        if (showSnapshots) DrawSnapshots(*this);
+        if (showUndoHistory) DrawUndoHistory(*this);
+        if (showAntiCheat) DrawAntiCheat(*this);
 
         DrawAboutWindow();
         DrawStatusBar();

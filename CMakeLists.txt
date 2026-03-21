@@ -85,6 +85,9 @@ add_library(memforge_core STATIC
     src/core/aob_scanner.cpp
     src/core/hotkey_manager.cpp
     src/core/trainer_builder.cpp
+    src/core/memory_snapshot.cpp
+    src/core/undo_history.cpp
+    src/core/anti_anticheat.cpp
 )
 target_include_directories(memforge_core PUBLIC ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(memforge_core PUBLIC psapi dwmapi lua54 iphlpapi ws2_32)
@@ -119,6 +122,9 @@ add_executable(MemForge WIN32
     src/gui/ui_aob_scanner.cpp
     src/gui/ui_hotkeys.cpp
     src/gui/ui_trainer_builder.cpp
+    src/gui/ui_snapshots.cpp
+    src/gui/ui_undo_history.cpp
+    src/gui/ui_anticheat.cpp
 )
 target_include_directories(MemForge PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(MemForge PRIVATE memforge_core imgui dwmapi)

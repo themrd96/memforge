@@ -17,6 +17,9 @@
 #include "core/aob_scanner.h"
 #include "core/hotkey_manager.h"
 #include "core/trainer_builder.h"
+#include "core/memory_snapshot.h"
+#include "core/undo_history.h"
+#include "core/anti_anticheat.h"
 #include "speedhack/speedhack.h"
 
 namespace memforge {
@@ -34,6 +37,9 @@ void DrawNetwork(class App& app);
 void DrawAobScanner(class App& app);
 void DrawHotkeys(class App& app);
 void DrawTrainerBuilder(class App& app);
+void DrawSnapshots(class App& app);
+void DrawUndoHistory(class App& app);
+void DrawAntiCheat(class App& app);
 
 class App {
 public:
@@ -128,6 +134,14 @@ public:
     char trainerOutputPath[512] = {};
     std::string trainerBuildLog;
 
+    // Memory Snapshots
+    MemorySnapshot snapshotA;
+    MemorySnapshot snapshotB;
+    std::vector<MemoryDiff> snapshotDiffs;
+
+    // Undo History
+    UndoHistory undoHistory;
+
     // UI state
     bool showProcessSelector = true;
     bool showScanner = true;
@@ -142,6 +156,9 @@ public:
     bool showAobScanner = false;
     bool showHotkeys = false;
     bool showTrainerBuilder = false;
+    bool showSnapshots = false;
+    bool showUndoHistory = false;
+    bool showAntiCheat = false;
 
     // Methods
     void AttachToProcess(DWORD pid);
