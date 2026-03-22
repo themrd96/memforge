@@ -331,6 +331,58 @@ std::vector<HANDLE> ProcessManager::SuspendProcessThreads(DWORD pid) {
     return handles;
 }
 
+std::vector<HANDLE> ProcessManager::SuspendInjectedThreads(DWORD pid, HANDLE hProcess) {
+    std::vector<HANDLE> handles;
+
+    // NtQueryInformationThread with ThreadQuerySetWin32StartAddress (9)
+    // returns the thread's original start address so we can check its backing.
+    typedef NTSTATUS(NTAPI* NtQueryInformationThreadFn)(
+        HANDLE, ULONG, PVOID, ULONG, PULONG);
+    auto NtQIT = (NtQueryInformationThreadFn)GetProcAddress(
+        GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationThread");
+    if (!NtQIT) return handles;
+
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snap == INVALID_HANDLE_VALUE) return handles;
+
+    THREADENTRY32 te{ sizeof(te) };
+    if (Thread32First(snap, &te)) {
+        do {
+            if (te.th32OwnerProcessID != pid) continue;
+
+            HANDLE hThread = OpenThread(
+                THREAD_SUSPEND_RESUME | THREAD_QUERY_INFORMATION,
+                FALSE, te.th32ThreadID);
+            if (!hThread) continue;
+
+            // Get the thread's start address
+            PVOID startAddr = nullptr;
+            NtQIT(hThread, 9, &startAddr, sizeof(startAddr), nullptr);
+
+            if (startAddr) {
+                // Check the memory region backing that address in the target process
+                MEMORY_BASIC_INFORMATION mbi{};
+                VirtualQueryEx(hProcess, startAddr, &mbi, sizeof(mbi));
+
+                // MEM_PRIVATE with no image backing = injected / manually mapped code
+                bool isPrivate = (mbi.Type == MEM_PRIVATE);
+                bool isImage   = (mbi.Type == MEM_IMAGE);
+
+                if (isPrivate && !isImage) {
+                    SuspendThread(hThread);
+                    handles.push_back(hThread);
+                    continue;
+                }
+            }
+
+            CloseHandle(hThread);
+        } while (Thread32Next(snap, &te));
+    }
+
+    CloseHandle(snap);
+    return handles;
+}
+
 void ProcessManager::ResumeProcessThreads(std::vector<HANDLE>& handles) {
     for (HANDLE h : handles) {
         ResumeThread(h);

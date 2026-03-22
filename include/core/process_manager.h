@@ -77,10 +77,14 @@ public:
     static bool IsElevated();
 
     // Suspend every thread in a process and return their handles.
-    // Used to freeze watchdog threads before they can detect our handle.
     static std::vector<HANDLE> SuspendProcessThreads(DWORD pid);
 
-    // Resume all threads returned by SuspendProcessThreads and close their handles.
+    // Suspend only threads whose start address lies in private (unbacked) memory.
+    // This targets injected watchdog threads while leaving legitimate game threads
+    // (network, render, etc.) running so the game stays alive.
+    static std::vector<HANDLE> SuspendInjectedThreads(DWORD pid, HANDLE hProcess);
+
+    // Resume all threads returned by Suspend* and close their handles.
     static void ResumeProcessThreads(std::vector<HANDLE>& handles);
 
 private:

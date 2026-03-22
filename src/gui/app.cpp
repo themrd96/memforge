@@ -31,9 +31,8 @@ App::~App() {
 void App::AttachToProcess(DWORD pid) {
     DetachFromProcess();
 
-    // Suspend all game threads immediately before trying to open the process.
-    // This closes the race window where a handle watchdog could fire between
-    // us obtaining the handle and the suppressor starting its first cycle.
+    // Freeze ALL threads briefly just long enough to get our handle safely.
+    // We'll refine to injected-only threads once we have hProcess.
     auto initialSuspend = ProcessManager::SuspendProcessThreads(pid);
 
     auto openResult = ProcessManager::OpenTargetProcess(pid);
@@ -56,43 +55,26 @@ void App::AttachToProcess(DWORD pid) {
     // Threads are resumed on DetachFromProcess().
     if (openResult.method == AttachMethod::DaclBypass ||
         openResult.method == AttachMethod::DirectSyscall) {
-        m_suspendedGameThreads = std::move(initialSuspend);
+        // Now that we have hProcess, identify and suspend ONLY injected threads
+        // (start address in private/unbacked memory). This keeps the game's
+        // network, render and logic threads running so it stays alive.
+        m_suspendedGameThreads = ProcessManager::SuspendInjectedThreads(
+            pid, openResult.handle);
 
-        // Watch for new threads spawned after our initial freeze and suspend
-        // them immediately. This prevents the watchdog from re-arming itself
-        // on a freshly created thread.
-        m_threadWatcher = std::jthread([pid, this](std::stop_token st) {
+        // Resume the full freeze — legitimate threads are now free to run
+        ProcessManager::ResumeProcessThreads(initialSuspend);
+
+        // Watch for newly spawned injected threads and freeze them too
+        m_threadWatcher = std::jthread([pid, hProc = openResult.handle, this](
+                std::stop_token st) {
             while (!st.stop_requested()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-                HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-                if (snap == INVALID_HANDLE_VALUE) continue;
-
-                // Build set of already-known thread IDs from our suspended list
-                // (we track TIDs separately so we can check quickly)
-                THREADENTRY32 te{ sizeof(te) };
-                if (Thread32First(snap, &te)) {
-                    do {
-                        if (te.th32OwnerProcessID != pid) continue;
-
-                        // Try to open and suspend — if the thread is already
-                        // suspended by us, SuspendThread just increments its
-                        // suspend count (harmless). We only care about new ones.
-                        HANDLE hThread = OpenThread(THREAD_SUSPEND_RESUME, FALSE,
-                                                    te.th32ThreadID);
-                        if (!hThread) continue;
-
-                        DWORD prevCount = SuspendThread(hThread);
-                        if (prevCount == 0) {
-                            // Was running — it's a new thread. Add to our list.
-                            m_suspendedGameThreads.push_back(hThread);
-                        } else {
-                            // Already suspended — don't double-count it
-                            CloseHandle(hThread);
-                        }
-                    } while (Thread32Next(snap, &te));
+                auto newHandles = ProcessManager::SuspendInjectedThreads(pid, hProc);
+                for (HANDLE h : newHandles) {
+                    // Only keep truly new suspensions (prev suspend count was 0)
+                    m_suspendedGameThreads.push_back(h);
                 }
-                CloseHandle(snap);
             }
         });
     } else {
