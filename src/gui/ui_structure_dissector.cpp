@@ -411,8 +411,7 @@ void DrawStructureDissector(App& app) {
                 }
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Freeze")) {
-                    ScanValue sv{};
-                    sv.int32Val = r.asInt32;
+                    ScanValue sv = r.asInt32;
                     app.freezer.AddEntry(r.address, sv, ValueType::Int32,
                         "nearby @" + std::string(addrStr));
                 }
