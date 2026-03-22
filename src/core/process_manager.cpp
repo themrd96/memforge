@@ -153,6 +153,18 @@ std::vector<ModuleInfo> ProcessManager::GetModules(DWORD pid) {
 
 // ─── Direct syscall helpers ───────────────────────────────
 
+// Check whether NtOpenProcess in the in-memory ntdll has been inline-hooked.
+// A hooked stub starts with 0xE9 (JMP rel32) instead of 0x4C (mov r10,rcx).
+// If hooked, calling OpenProcess() would trigger the AC handler — so we must
+// skip the normal call entirely and go straight to the direct syscall path.
+static bool IsNtOpenProcessHooked() {
+    HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
+    if (!hNtdll) return false;
+    auto* fn = reinterpret_cast<BYTE*>(GetProcAddress(hNtdll, "NtOpenProcess"));
+    if (!fn)  return false;
+    return fn[0] == 0xE9; // JMP = inline hook present
+}
+
 // Read the real syscall number for NtOpenProcess from ntdll.dll on disk.
 // This is necessary because some anti-cheats patch the in-memory ntdll stub
 // with a JMP to their own handler (inline hook), making the stub useless.
@@ -253,16 +265,27 @@ OpenProcessResult ProcessManager::OpenTargetProcess(DWORD pid) {
 
     OpenProcessResult result{};
 
-    // ── Method 1: Normal ─────────────────────────────────────────────────────
-    result.handle = OpenProcess(kDesired, FALSE, pid);
-    if (result.handle) {
-        result.method = AttachMethod::Normal;
-        return result;
+    // Detect the ntdll hook BEFORE attempting any normal OpenProcess call.
+    // If the hook is present, calling OpenProcess() would route through the AC
+    // handler which may kill the game as a side-effect — not just deny access.
+    // Skipping Method 1 when hooked means the AC never sees our attach attempt.
+    const bool hooked = IsNtOpenProcessHooked();
+    UINT16 sysNum = 0xFFFF;
+
+    // ── Method 1: Normal (only if ntdll is clean) ────────────────────────────
+    if (!hooked) {
+        result.handle = OpenProcess(kDesired, FALSE, pid);
+        if (result.handle) {
+            result.method = AttachMethod::Normal;
+            return result;
+        }
     }
 
     // ── Method 2: Direct syscall (bypasses ntdll inline hooks) ───────────────
-    UINT16 sysNum = ReadNtOpenProcessSyscallNumber();
-    result.handle  = DirectSyscallOpenProcess(sysNum, pid, kDesired);
+    // Also used as the first attempt when a hook is detected, so the hook
+    // handler never fires and cannot trigger a game-kill side effect.
+    sysNum = ReadNtOpenProcessSyscallNumber();
+    result.handle = DirectSyscallOpenProcess(sysNum, pid, kDesired);
     if (result.handle) {
         result.method = AttachMethod::DirectSyscall;
         return result;
