@@ -208,7 +208,7 @@ HANDLE ProcessManager::DirectSyscallOpenProcess(UINT16 syscallNum, DWORD pid, AC
     memcpy(stub, code, sizeof(code));
 
     using NtOpenProcessFn = NTSTATUS(NTAPI*)(
-        PHANDLE, ACCESS_MASK, POBJECT_ATTRIBUTES, PCLIENT_ID);
+        PHANDLE, ACCESS_MASK, POBJECT_ATTRIBUTES, CLIENT_ID*);
 
     HANDLE hProcess = nullptr;
     OBJECT_ATTRIBUTES oa{};

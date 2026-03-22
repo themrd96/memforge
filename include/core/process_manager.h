@@ -38,7 +38,7 @@ enum class AttachMethod {
 struct OpenProcessResult {
     HANDLE      handle = nullptr;
     AttachMethod method = AttachMethod::Failed;
-    NTSTATUS    lastStatus = 0;
+    DWORD       lastStatus = 0;
 
     const char* MethodName() const {
         switch (method) {
