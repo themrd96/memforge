@@ -49,27 +49,19 @@ void App::AttachToProcess(DWORD pid) {
     targetPid = pid;
     processAttached = true;
 
-    // Start the watchdog suppressor when we needed a DACL bypass.
-    // It suspends all game threads every 10ms for 1ms, preventing any
-    // NtQuerySystemInformation handle monitor from completing its scan.
+    // Keep ALL game threads permanently suspended for the duration of the
+    // attachment. The in-game watchdog (polling via NtQuerySystemInformation)
+    // can never fire while its thread is suspended.
+    // ReadProcessMemory / WriteProcessMemory still work on suspended processes.
+    // Threads are resumed on DetachFromProcess().
     if (openResult.method == AttachMethod::DaclBypass ||
         openResult.method == AttachMethod::DirectSyscall) {
-        m_watchdogSuppressor = std::jthread([pid](std::stop_token st) {
-            while (!st.stop_requested()) {
-                auto handles = ProcessManager::SuspendProcessThreads(pid);
-                // 1ms suspension — enough to interrupt any in-progress
-                // NtQuerySystemInformation call in the watchdog thread
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                ProcessManager::ResumeProcessThreads(handles);
-                // 10ms gap before the next suppression cycle.
-                // Catches any watchdog polling up to ~100ms intervals.
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
-        });
+        m_suspendedGameThreads = std::move(initialSuspend);
+        // initialSuspend is now empty — threads stay suspended
+    } else {
+        // Normal attach — no watchdog to worry about, resume immediately
+        ProcessManager::ResumeProcessThreads(initialSuspend);
     }
-
-    // Now resume the initial suspend — suppressor has taken ownership
-    ProcessManager::ResumeProcessThreads(initialSuspend);
 
     // Find the process name
     for (auto& p : processList) {
@@ -95,11 +87,8 @@ void App::AttachToProcess(DWORD pid) {
 void App::DetachFromProcess() {
     if (!processAttached) return;
 
-    // Stop watchdog suppressor first so game threads are no longer interfered with
-    if (m_watchdogSuppressor.joinable()) {
-        m_watchdogSuppressor.request_stop();
-        m_watchdogSuppressor.join();
-    }
+    // Resume any permanently suspended game threads before detaching
+    ProcessManager::ResumeProcessThreads(m_suspendedGameThreads);
 
     // Issue 6: Stop and join scan thread on detach
     if (m_scanThread.joinable()) {

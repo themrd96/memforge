@@ -172,10 +172,11 @@ public:
     // Issue 6: jthread for scan operations (stored as member for lifecycle management)
     std::jthread m_scanThread;
 
-    // Watchdog suppressor: periodically suspends all game threads so that any
-    // NtQuerySystemInformation-based handle monitor cannot complete its scan.
-    // Only active when attached via DaclBypass.
-    std::jthread m_watchdogSuppressor;
+    // Permanently suspended game thread handles.
+    // Held for the entire attachment lifetime so the in-game watchdog thread
+    // can never call NtQuerySystemInformation and detect our handle.
+    // ReadProcessMemory / WriteProcessMemory work fine on suspended processes.
+    std::vector<HANDLE> m_suspendedGameThreads;
 
     // UI state
     bool showProcessSelector = true;
