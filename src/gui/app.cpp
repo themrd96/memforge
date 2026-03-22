@@ -31,14 +31,45 @@ App::~App() {
 void App::AttachToProcess(DWORD pid) {
     DetachFromProcess();
 
+    // Suspend all game threads immediately before trying to open the process.
+    // This closes the race window where a handle watchdog could fire between
+    // us obtaining the handle and the suppressor starting its first cycle.
+    auto initialSuspend = ProcessManager::SuspendProcessThreads(pid);
+
     auto openResult = ProcessManager::OpenTargetProcess(pid);
-    if (!openResult.Ok()) return;
+    if (!openResult.Ok()) {
+        // Failed — resume threads so the game keeps running normally
+        ProcessManager::ResumeProcessThreads(initialSuspend);
+        return;
+    }
 
     targetProcess    = openResult.handle;
     lastAttachMethod = openResult.method;
 
     targetPid = pid;
     processAttached = true;
+
+    // Start the watchdog suppressor when we needed a DACL bypass.
+    // It suspends all game threads every 10ms for 1ms, preventing any
+    // NtQuerySystemInformation handle monitor from completing its scan.
+    if (openResult.method == AttachMethod::DaclBypass ||
+        openResult.method == AttachMethod::DirectSyscall) {
+        m_watchdogSuppressor = std::jthread([pid](std::stop_token st) {
+            while (!st.stop_requested()) {
+                auto handles = ProcessManager::SuspendProcessThreads(pid);
+                // 1ms suspension — enough to interrupt any in-progress
+                // NtQuerySystemInformation call in the watchdog thread
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                ProcessManager::ResumeProcessThreads(handles);
+                // 10ms gap before the next suppression cycle.
+                // Catches any watchdog polling up to ~100ms intervals.
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+        });
+    }
+
+    // Now resume the initial suspend — suppressor has taken ownership
+    ProcessManager::ResumeProcessThreads(initialSuspend);
 
     // Find the process name
     for (auto& p : processList) {
@@ -63,6 +94,12 @@ void App::AttachToProcess(DWORD pid) {
 
 void App::DetachFromProcess() {
     if (!processAttached) return;
+
+    // Stop watchdog suppressor first so game threads are no longer interfered with
+    if (m_watchdogSuppressor.joinable()) {
+        m_watchdogSuppressor.request_stop();
+        m_watchdogSuppressor.join();
+    }
 
     // Issue 6: Stop and join scan thread on detach
     if (m_scanThread.joinable()) {

@@ -76,6 +76,13 @@ public:
     // Check if we're running as administrator
     static bool IsElevated();
 
+    // Suspend every thread in a process and return their handles.
+    // Used to freeze watchdog threads before they can detect our handle.
+    static std::vector<HANDLE> SuspendProcessThreads(DWORD pid);
+
+    // Resume all threads returned by SuspendProcessThreads and close their handles.
+    static void ResumeProcessThreads(std::vector<HANDLE>& handles);
+
 private:
     static std::string  WideToUtf8(const std::wstring& wide);
     static std::wstring Utf8ToWide(const std::string& utf8);

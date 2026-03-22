@@ -307,6 +307,38 @@ OpenProcessResult ProcessManager::OpenTargetProcess(DWORD pid) {
     return result;
 }
 
+// ─── Thread suspension helpers ───────────────────────────
+
+std::vector<HANDLE> ProcessManager::SuspendProcessThreads(DWORD pid) {
+    std::vector<HANDLE> handles;
+
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snap == INVALID_HANDLE_VALUE) return handles;
+
+    THREADENTRY32 te{ sizeof(te) };
+    if (Thread32First(snap, &te)) {
+        do {
+            if (te.th32OwnerProcessID != pid) continue;
+            HANDLE hThread = OpenThread(THREAD_SUSPEND_RESUME, FALSE, te.th32ThreadID);
+            if (hThread) {
+                SuspendThread(hThread);
+                handles.push_back(hThread);
+            }
+        } while (Thread32Next(snap, &te));
+    }
+
+    CloseHandle(snap);
+    return handles;
+}
+
+void ProcessManager::ResumeProcessThreads(std::vector<HANDLE>& handles) {
+    for (HANDLE h : handles) {
+        ResumeThread(h);
+        CloseHandle(h);
+    }
+    handles.clear();
+}
+
 // ─── Find process by name ────────────────────────────────
 
 std::vector<ProcessInfo> ProcessManager::FindProcessByName(const std::string& name) {
