@@ -5,8 +5,15 @@
 
 #pragma comment(lib, "advapi32.lib")
 
-// Forward declaration — defined in the direct syscall helpers section below
-static bool IsNtOpenProcessHooked();
+// Check whether NtOpenProcess in the in-memory ntdll has been inline-hooked.
+// A hooked stub starts with 0xE9 (JMP rel32) instead of 0x4C (mov r10,rcx).
+static bool IsNtOpenProcessHooked() {
+    HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
+    if (!hNtdll) return false;
+    auto* fn = reinterpret_cast<BYTE*>(GetProcAddress(hNtdll, "NtOpenProcess"));
+    if (!fn)  return false;
+    return fn[0] == 0xE9;
+}
 
 namespace memforge {
 
@@ -161,18 +168,6 @@ std::vector<ModuleInfo> ProcessManager::GetModules(DWORD pid) {
 }
 
 // ─── Direct syscall helpers ───────────────────────────────
-
-// Check whether NtOpenProcess in the in-memory ntdll has been inline-hooked.
-// A hooked stub starts with 0xE9 (JMP rel32) instead of 0x4C (mov r10,rcx).
-// If hooked, calling OpenProcess() would trigger the AC handler — so we must
-// skip the normal call entirely and go straight to the direct syscall path.
-static bool IsNtOpenProcessHooked() {
-    HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
-    if (!hNtdll) return false;
-    auto* fn = reinterpret_cast<BYTE*>(GetProcAddress(hNtdll, "NtOpenProcess"));
-    if (!fn)  return false;
-    return fn[0] == 0xE9; // JMP = inline hook present
-}
 
 // Read the real syscall number for NtOpenProcess from ntdll.dll on disk.
 // This is necessary because some anti-cheats patch the in-memory ntdll stub
