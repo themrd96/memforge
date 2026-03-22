@@ -98,6 +98,16 @@ public:
     StructDefinition currentStruct;
     char structAddrInput[64] = {};
 
+    // Nearby Search (inside Structure Dissector)
+    char  nearbyAddrInput[64]   = {};
+    int   nearbyRangeBefore     = 256;
+    int   nearbyRangeAfter      = 256;
+    int   nearbyAlignment       = 4;
+    bool  nearbyFilterEnabled   = false;
+    float nearbyFilterValue     = 0.0f;
+    float nearbyFilterTolerance = 1.0f;
+    std::vector<NearbyResult> nearbyResults;
+
     // Pointer Scanner
     PointerScanner pointerScanner;
     char ptrScanAddrInput[64] = {};

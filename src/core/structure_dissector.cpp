@@ -283,4 +283,46 @@ StructDefinition StructureDissector::AutoDetect(uintptr_t baseAddress, size_t to
     return def;
 }
 
+std::vector<NearbyResult> StructureDissector::NearbySearch(
+        uintptr_t baseAddress,
+        int       rangeBefore,
+        int       rangeAfter,
+        int       alignment,
+        bool      filterEnabled,
+        float     filterValue,
+        float     filterTolerance) const {
+
+    std::vector<NearbyResult> results;
+    if (!m_hProcess || alignment < 1) return results;
+
+    uintptr_t startAddr = baseAddress - (uintptr_t)rangeBefore;
+    size_t    totalSize = (size_t)(rangeBefore + rangeAfter);
+
+    std::vector<uint8_t> buf;
+    if (!ReadBytes(startAddr, totalSize, buf)) return results;
+
+    for (int off = 0; off + 8 <= (int)buf.size(); off += alignment) {
+        NearbyResult r{};
+        r.address       = startAddr + (uintptr_t)off;
+        r.offsetFromBase = (int)(r.address - baseAddress);
+        std::memcpy(r.rawBytes, buf.data() + off, 8);
+        std::memcpy(&r.asInt32,  buf.data() + off, 4);
+        std::memcpy(&r.asUInt32, buf.data() + off, 4);
+        std::memcpy(&r.asFloat,  buf.data() + off, 4);
+        std::memcpy(&r.asInt64,  buf.data() + off, 8);
+        std::memcpy(&r.asDouble, buf.data() + off, 8);
+
+        if (filterEnabled) {
+            bool int32Match  = (std::fabs((float)r.asInt32 - filterValue) <= filterTolerance);
+            bool floatMatch  = std::isfinite(r.asFloat) &&
+                               (std::fabs(r.asFloat - filterValue) <= filterTolerance);
+            if (!int32Match && !floatMatch) continue;
+        }
+
+        results.push_back(r);
+    }
+
+    return results;
+}
+
 } // namespace memforge

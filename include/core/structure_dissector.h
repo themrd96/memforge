@@ -62,6 +62,18 @@ struct StructDefinition {
     void RemoveField(size_t index);
 };
 
+// One hit from a nearby search
+struct NearbyResult {
+    uintptr_t address;
+    int       offsetFromBase; // signed — negative means before base address
+    int32_t   asInt32;
+    uint32_t  asUInt32;
+    float     asFloat;
+    int64_t   asInt64;
+    double    asDouble;
+    uint8_t   rawBytes[8];
+};
+
 class StructureDissector {
 public:
     void SetProcess(HANDLE hProcess) { m_hProcess = hProcess; }
@@ -81,6 +93,19 @@ public:
 
     // Auto-detect structure fields from memory
     StructDefinition AutoDetect(uintptr_t baseAddress, size_t totalSize) const;
+
+    // Scan memory in [baseAddress - rangeBefore, baseAddress + rangeAfter],
+    // stepping by `alignment` bytes (default 4). Returns every location
+    // whose Int32 or Float value matches the optional filter.
+    // Pass filterEnabled=false to return all locations.
+    std::vector<NearbyResult> NearbySearch(
+        uintptr_t baseAddress,
+        int       rangeBefore,
+        int       rangeAfter,
+        int       alignment,
+        bool      filterEnabled,
+        float     filterValue,
+        float     filterTolerance) const;
 
 private:
     HANDLE m_hProcess = nullptr;

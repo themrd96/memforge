@@ -3,15 +3,21 @@
 #include <sstream>
 #include <cstring>
 #include <cstdlib>
+#include <cmath>
 
 namespace memforge {
 
 void DrawStructureDissector(App& app) {
-    ImGui::SetNextWindowSize(ImVec2(800, 500), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(900, 560), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Structure Dissector", &app.showStructDissector)) {
         ImGui::End();
         return;
     }
+
+    if (!ImGui::BeginTabBar("StructTabs")) { ImGui::End(); return; }
+
+    // ── Tab 1: Structure Dissector ───────────────────────────────────────────
+    if (!ImGui::BeginTabItem("Dissector")) { ImGui::EndTabBar(); ImGui::End(); return; }
 
     // Address input
     ImGui::Text("Base Address:");
@@ -248,6 +254,179 @@ void DrawStructureDissector(App& app) {
     ImGui::Text("Fields: %zu | Total Size: 0x%zX",
                 app.currentStruct.fields.size(), app.currentStruct.GetTotalSize());
 
+    ImGui::EndTabItem();
+
+    // ── Tab 2: Nearby Search ─────────────────────────────────────────────────
+    if (ImGui::BeginTabItem("Nearby Search")) {
+        ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f),
+            "Find values near a known address — useful for locating related fields in the same struct.");
+        ImGui::Spacing();
+
+        // Address input
+        ImGui::Text("Known Address:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(180);
+        ImGui::InputText("##NearAddr", app.nearbyAddrInput, sizeof(app.nearbyAddrInput),
+                         ImGuiInputTextFlags_CharsHexadecimal);
+        ImGui::SameLine();
+        ImGui::Text("Range:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(80);
+        ImGui::InputInt("##RangeBefore", &app.nearbyRangeBefore, 16);
+        ImGui::SameLine();
+        ImGui::Text("before /");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(80);
+        ImGui::InputInt("##RangeAfter", &app.nearbyRangeAfter, 16);
+        ImGui::SameLine();
+        ImGui::Text("after");
+
+        app.nearbyRangeBefore = std::max(4,  std::min(app.nearbyRangeBefore, 4096));
+        app.nearbyRangeAfter  = std::max(4,  std::min(app.nearbyRangeAfter,  4096));
+
+        // Alignment
+        ImGui::Text("Step (bytes):");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(60);
+        ImGui::InputInt("##Align", &app.nearbyAlignment, 1);
+        app.nearbyAlignment = std::max(1, std::min(app.nearbyAlignment, 8));
+
+        // Value filter
+        ImGui::SameLine();
+        ImGui::Spacing(); ImGui::SameLine();
+        ImGui::Checkbox("Filter by value", &app.nearbyFilterEnabled);
+        if (app.nearbyFilterEnabled) {
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(100);
+            ImGui::InputFloat("##FilterVal", &app.nearbyFilterValue, 0, 0, "%.2f");
+            ImGui::SameLine();
+            ImGui::Text("± ");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(70);
+            ImGui::InputFloat("##FilterTol", &app.nearbyFilterTolerance, 0, 0, "%.2f");
+        }
+
+        ImGui::Spacing();
+
+        bool canSearch = app.processAttached && app.nearbyAddrInput[0] != '\0';
+        if (!canSearch) ImGui::BeginDisabled();
+        if (ImGui::Button("Search", ImVec2(100, 0))) {
+            uintptr_t addr = 0;
+            std::istringstream iss(app.nearbyAddrInput);
+            iss >> std::hex >> addr;
+            if (addr != 0) {
+                app.structDissector.SetProcess(app.targetProcess);
+                app.nearbyResults = app.structDissector.NearbySearch(
+                    addr,
+                    app.nearbyRangeBefore,
+                    app.nearbyRangeAfter,
+                    app.nearbyAlignment,
+                    app.nearbyFilterEnabled,
+                    app.nearbyFilterValue,
+                    app.nearbyFilterTolerance);
+            }
+        }
+        if (!canSearch) ImGui::EndDisabled();
+
+        ImGui::SameLine();
+        ImGui::TextDisabled("%zu results", app.nearbyResults.size());
+
+        ImGui::Separator();
+
+        // Results table
+        if (ImGui::BeginTable("NearbyResults", 7,
+                ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable,
+                ImVec2(0, -30))) {
+
+            ImGui::TableSetupScrollFreeze(0, 1);
+            ImGui::TableSetupColumn("Offset",   ImGuiTableColumnFlags_WidthFixed,   70);
+            ImGui::TableSetupColumn("Address",  ImGuiTableColumnFlags_WidthFixed,  140);
+            ImGui::TableSetupColumn("Int32",    ImGuiTableColumnFlags_WidthFixed,   80);
+            ImGui::TableSetupColumn("UInt32",   ImGuiTableColumnFlags_WidthFixed,   80);
+            ImGui::TableSetupColumn("Float",    ImGuiTableColumnFlags_WidthFixed,   90);
+            ImGui::TableSetupColumn("Hex",      ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("##act",    ImGuiTableColumnFlags_WidthFixed,   90);
+            ImGui::TableHeadersRow();
+
+            for (auto& r : app.nearbyResults) {
+                ImGui::TableNextRow();
+                ImGui::PushID((int)(r.address & 0xFFFFFFFF));
+
+                // Highlight the base address row
+                bool isBase = (r.offsetFromBase == 0);
+                if (isBase)
+                    ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,
+                        ImGui::GetColorU32(ImVec4(0.2f, 0.5f, 0.2f, 0.4f)));
+
+                // Offset
+                ImGui::TableSetColumnIndex(0);
+                if (r.offsetFromBase >= 0)
+                    ImGui::Text("+0x%X", r.offsetFromBase);
+                else
+                    ImGui::Text("-0x%X", -r.offsetFromBase);
+
+                // Address
+                ImGui::TableSetColumnIndex(1);
+                char addrStr[32];
+                snprintf(addrStr, sizeof(addrStr), "0x%llX", (unsigned long long)r.address);
+                ImGui::TextUnformatted(addrStr);
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+                    ImGui::SetClipboardText(addrStr);
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Right-click to copy address");
+
+                // Int32
+                ImGui::TableSetColumnIndex(2);
+                ImGui::Text("%d", r.asInt32);
+
+                // UInt32
+                ImGui::TableSetColumnIndex(3);
+                ImGui::Text("%u", r.asUInt32);
+
+                // Float
+                ImGui::TableSetColumnIndex(4);
+                if (std::isfinite(r.asFloat))
+                    ImGui::Text("%.3f", r.asFloat);
+                else
+                    ImGui::TextDisabled("NaN/Inf");
+
+                // Hex
+                ImGui::TableSetColumnIndex(5);
+                ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f),
+                    "%02X %02X %02X %02X %02X %02X %02X %02X",
+                    r.rawBytes[0], r.rawBytes[1], r.rawBytes[2], r.rawBytes[3],
+                    r.rawBytes[4], r.rawBytes[5], r.rawBytes[6], r.rawBytes[7]);
+
+                // Action buttons
+                ImGui::TableSetColumnIndex(6);
+                if (ImGui::SmallButton("-> Struct")) {
+                    // Add to the struct definition at the correct offset
+                    size_t fieldOffset = (r.offsetFromBase >= 0)
+                        ? (size_t)r.offsetFromBase : 0;
+                    app.currentStruct.AddField(
+                        "nearby_" + std::to_string(r.offsetFromBase),
+                        std::isfinite(r.asFloat) ? FieldType::Float : FieldType::Int32,
+                        fieldOffset);
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Freeze")) {
+                    ScanValue sv{};
+                    sv.int32Val = r.asInt32;
+                    app.freezer.AddEntry(r.address, sv, ValueType::Int32,
+                        "nearby @" + std::string(addrStr));
+                }
+
+                ImGui::PopID();
+            }
+
+            ImGui::EndTable();
+        }
+
+        ImGui::EndTabItem();
+    }
+
+    ImGui::EndTabBar();
     ImGui::End();
 }
 
