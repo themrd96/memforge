@@ -23,6 +23,7 @@
 #include "core/anti_anticheat.h"
 #include "speedhack/speedhack.h"
 #include "core/stealth.h"
+#include "core/manual_mapper.h"
 
 namespace memforge {
 
@@ -159,6 +160,14 @@ public:
     StealthManager::DetectionStatus stealthLastDetection;
     bool stealthHasCheckedDetection = false;
 
+    // Manual Mapper
+    ManualMapper manualMapper;
+    uintptr_t mappedBase = 0;
+    std::vector<std::string> mapperLog;
+    bool mapperSuccess = false;
+    std::string mapperError;
+    std::string mapperDllPath;
+
     // Issue 6: jthread for scan operations (stored as member for lifecycle management)
     std::jthread m_scanThread;
 
@@ -179,6 +188,7 @@ public:
     bool showSnapshots = false;
     bool showUndoHistory = false;
     bool showAntiCheat = false;
+    bool showManualMapper = false;
 
     // Methods
     void AttachToProcess(DWORD pid);

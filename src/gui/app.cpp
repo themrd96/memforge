@@ -12,6 +12,8 @@
 
 namespace memforge {
 
+extern void DrawManualMapperPanel(App& app);
+
 App::App() {
     scanConfig.valueType = ValueType::Int32;
     scanConfig.scanMode = ScanMode::ExactValue;
@@ -308,6 +310,8 @@ void App::DrawMenuBar() {
             ImGui::MenuItem("Memory Snapshots", nullptr, &showSnapshots);
             ImGui::MenuItem("Undo History", nullptr, &showUndoHistory);
             ImGui::MenuItem("Anti-Anti-Cheat", nullptr, &showAntiCheat);
+            ImGui::Separator();
+            ImGui::MenuItem("Manual Mapper", nullptr, &showManualMapper);
             ImGui::EndMenu();
         }
 
@@ -596,6 +600,7 @@ int App::Run() {
         if (showSnapshots) DrawSnapshots(*this);
         if (showUndoHistory) DrawUndoHistory(*this);
         if (showAntiCheat) DrawAntiCheat(*this);
+        if (showManualMapper) DrawManualMapperPanel(*this);
 
         DrawAboutWindow();
         DrawStatusBar();

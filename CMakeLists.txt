@@ -88,6 +88,7 @@ add_library(memforge_core STATIC
     src/core/memory_snapshot.cpp
     src/core/undo_history.cpp
     src/core/anti_anticheat.cpp
+    src/core/manual_mapper.cpp
 )
 target_include_directories(memforge_core PUBLIC ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(memforge_core PUBLIC psapi dwmapi lua54 iphlpapi ws2_32)
@@ -125,6 +126,7 @@ add_executable(MemForge WIN32
     src/gui/ui_snapshots.cpp
     src/gui/ui_undo_history.cpp
     src/gui/ui_anticheat.cpp
+    src/gui/ui_manual_mapper.cpp
 )
 target_include_directories(MemForge PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(MemForge PRIVATE memforge_core imgui dwmapi)
