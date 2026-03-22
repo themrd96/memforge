@@ -32,6 +32,7 @@ void DrawProcessSelector(App& app) {
     ImGui::Separator();
 
     // Process list table
+    // Issue 16: Use ImGuiTableFlags_Sortable and implement actual column sorting
     if (ImGui::BeginTable("ProcessTable", 4,
                           ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
                           ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Sortable |
@@ -39,12 +40,46 @@ void DrawProcessSelector(App& app) {
                           ImVec2(0, -1))) {
 
         ImGui::TableSetupScrollFreeze(0, 1); // freeze header row
-        ImGui::TableSetupColumn("PID", ImGuiTableColumnFlags_WidthFixed, 60.0f);
-        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("PID",    ImGuiTableColumnFlags_WidthFixed, 60.0f);
+        ImGui::TableSetupColumn("Name",   ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Window", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Memory", ImGuiTableColumnFlags_WidthFixed, 80.0f);
         ImGui::TableHeadersRow();
 
+        // Issue 16: Apply sorting when the user clicks a column header
+        if (ImGuiTableSortSpecs* sortSpecs = ImGui::TableGetSortSpecs()) {
+            if (sortSpecs->SpecsDirty && sortSpecs->SpecsCount > 0) {
+                const ImGuiTableColumnSortSpecs& spec = sortSpecs->Specs[0];
+                bool ascending = (spec.SortDirection == ImGuiSortDirection_Ascending);
+
+                std::sort(app.processList.begin(), app.processList.end(),
+                    [&](const ProcessInfo& a, const ProcessInfo& b) {
+                        bool less = false;
+                        switch (spec.ColumnIndex) {
+                            case 0: // PID
+                                less = a.pid < b.pid;
+                                break;
+                            case 1: // Name
+                                less = a.nameLower < b.nameLower;
+                                break;
+                            case 2: // Window title
+                                less = a.titleLower < b.titleLower;
+                                break;
+                            case 3: // Memory
+                                less = a.memoryUsage < b.memoryUsage;
+                                break;
+                            default:
+                                less = a.nameLower < b.nameLower;
+                                break;
+                        }
+                        return ascending ? less : !less;
+                    });
+
+                sortSpecs->SpecsDirty = false;
+            }
+        }
+
+        // Issue 15: Use precomputed lowercase strings for filtering (computed in RefreshProcessList)
         std::string filterStr = app.processFilter;
         std::transform(filterStr.begin(), filterStr.end(), filterStr.begin(), ::tolower);
 
@@ -52,17 +87,10 @@ void DrawProcessSelector(App& app) {
             // Skip system idle process
             if (proc.pid == 0) continue;
 
-            // Apply filter
+            // Issue 15: Compare against precomputed lowercase fields, not per-frame transforms
             if (!filterStr.empty()) {
-                std::string nameLower = proc.name;
-                std::transform(nameLower.begin(), nameLower.end(),
-                             nameLower.begin(), ::tolower);
-                std::string titleLower = proc.windowTitle;
-                std::transform(titleLower.begin(), titleLower.end(),
-                             titleLower.begin(), ::tolower);
-
-                if (nameLower.find(filterStr) == std::string::npos &&
-                    titleLower.find(filterStr) == std::string::npos) {
+                if (proc.nameLower.find(filterStr) == std::string::npos &&
+                    proc.titleLower.find(filterStr) == std::string::npos) {
                     continue;
                 }
             }

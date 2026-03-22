@@ -8,6 +8,7 @@
 #include <atomic>
 #include <thread>
 #include <variant>
+#include <condition_variable>
 
 namespace memforge {
 
@@ -126,6 +127,9 @@ private:
     std::atomic<bool> m_scanning{false};
     std::atomic<bool> m_cancelRequested{false};
     std::mutex m_resultsMutex;
+    // Issue 8: Condition variable for CancelScan to wait on instead of busy-wait
+    std::mutex m_scanDoneMutex;
+    std::condition_variable m_scanDoneCV;
 
     // Internal scan helpers
     void ScanRegion(const MemoryRegion& region, const ScanConfig& config,

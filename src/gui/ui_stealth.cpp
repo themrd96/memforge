@@ -6,14 +6,9 @@
 
 namespace memforge {
 
-// Static state for the stealth panel
-static StealthManager s_stealthMgr;
-static StealthConfig s_stealthConfig;
-static char s_customTitle[256] = {};
-static bool s_stealthApplied = false;
-static float s_detectionCheckTimer = 0.0f;
-static StealthManager::DetectionStatus s_lastDetection;
-static bool s_hasCheckedDetection = false;
+// Issue 18: All stealth state is now stored as App members (stealthMgr, stealthConfig,
+// stealthCustomTitle, stealthApplied, etc.) rather than file-scope statics.
+// DetachFromProcess() resets these members when switching processes.
 
 void DrawStealth(App& app) {
     ImGui::SetNextWindowSize(ImVec2(480, 550), ImGuiCond_FirstUseEver);
@@ -25,27 +20,28 @@ void DrawStealth(App& app) {
 
     // ─── Detection Status (auto-refresh every 5s) ────────
 
-    s_detectionCheckTimer += ImGui::GetIO().DeltaTime;
-    if (s_detectionCheckTimer > 5.0f || !s_hasCheckedDetection) {
-        s_lastDetection = StealthManager::CheckForDetection();
-        s_detectionCheckTimer = 0.0f;
-        s_hasCheckedDetection = true;
+    app.stealthDetectionCheckTimer += ImGui::GetIO().DeltaTime;
+    if (app.stealthDetectionCheckTimer > 5.0f || !app.stealthHasCheckedDetection) {
+        app.stealthLastDetection = StealthManager::CheckForDetection();
+        app.stealthDetectionCheckTimer = 0.0f;
+        app.stealthHasCheckedDetection = true;
     }
 
-    if (s_lastDetection.debuggerAttached) {
+    if (app.stealthLastDetection.debuggerAttached) {
         ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
                           "WARNING: Debugger attached to MemForge");
     }
 
-    if (s_lastDetection.analysisToolsRunning) {
+    if (app.stealthLastDetection.analysisToolsRunning) {
         ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "Detected tools:");
-        for (auto& tool : s_lastDetection.detectedTools) {
+        for (auto& tool : app.stealthLastDetection.detectedTools) {
             ImGui::SameLine();
             ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", tool.c_str());
         }
     }
 
-    if (!s_lastDetection.debuggerAttached && !s_lastDetection.analysisToolsRunning) {
+    if (!app.stealthLastDetection.debuggerAttached &&
+        !app.stealthLastDetection.analysisToolsRunning) {
         ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.3f, 1.0f),
                           "No detection threats found");
     }
@@ -58,30 +54,31 @@ void DrawStealth(App& app) {
     ImGui::Text("Stealth Configuration");
     ImGui::Spacing();
 
-    ImGui::Checkbox("Randomize window title", &s_stealthConfig.randomizeWindowTitle);
+    ImGui::Checkbox("Randomize window title", &app.stealthConfig.randomizeWindowTitle);
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Changes the window title to look like a legitimate\n"
                           "Windows service. Anti-cheats often scan window titles.");
     }
 
-    if (s_stealthConfig.randomizeWindowTitle) {
+    if (app.stealthConfig.randomizeWindowTitle) {
         ImGui::Indent();
         ImGui::SetNextItemWidth(300);
         ImGui::InputTextWithHint("##customtitle", "Custom title (empty = auto-generate)",
-                                 s_customTitle, sizeof(s_customTitle));
-        s_stealthConfig.customWindowTitle = s_customTitle;
+                                 app.stealthCustomTitle, sizeof(app.stealthCustomTitle));
+        app.stealthConfig.customWindowTitle = app.stealthCustomTitle;
 
         if (ImGui::SmallButton("Preview random name")) {
             std::string preview = NameGenerator::GenerateWindowTitle();
-            strncpy(s_customTitle, preview.c_str(), sizeof(s_customTitle) - 1);
-            s_stealthConfig.customWindowTitle = s_customTitle;
+            strncpy(app.stealthCustomTitle, preview.c_str(),
+                    sizeof(app.stealthCustomTitle) - 1);
+            app.stealthConfig.customWindowTitle = app.stealthCustomTitle;
         }
         ImGui::Unindent();
     }
 
     ImGui::Spacing();
 
-    ImGui::Checkbox("Hide from taskbar & Alt+Tab", &s_stealthConfig.hiddenFromTaskbar);
+    ImGui::Checkbox("Hide from taskbar & Alt+Tab", &app.stealthConfig.hiddenFromTaskbar);
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Removes MemForge from the taskbar and Alt+Tab switcher.\n"
                           "The window stays open but becomes invisible to casual observation.");
@@ -89,7 +86,7 @@ void DrawStealth(App& app) {
 
     ImGui::Spacing();
 
-    ImGui::Checkbox("Clear PE headers in memory", &s_stealthConfig.clearPeHeaders);
+    ImGui::Checkbox("Clear PE headers in memory", &app.stealthConfig.clearPeHeaders);
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Wipes the executable header from MemForge's own memory.\n"
                           "Makes it harder for anti-cheats to identify the tool by\n"
@@ -98,7 +95,7 @@ void DrawStealth(App& app) {
 
     ImGui::Spacing();
 
-    ImGui::Checkbox("Mutex cloaking", &s_stealthConfig.mutexCloaking);
+    ImGui::Checkbox("Mutex cloaking", &app.stealthConfig.mutexCloaking);
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Prevents creation of identifiable named mutexes.\n"
                           "Some anti-cheats check for mutexes created by known tools.");
@@ -106,7 +103,7 @@ void DrawStealth(App& app) {
 
     ImGui::Spacing();
 
-    ImGui::Checkbox("Block window enumeration", &s_stealthConfig.blockWindowEnumeration);
+    ImGui::Checkbox("Block window enumeration", &app.stealthConfig.blockWindowEnumeration);
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Uses DWM cloaking to hide from EnumWindows API.\n"
                           "Anti-cheats use EnumWindows to find cheat tool windows.\n\n"
@@ -119,21 +116,21 @@ void DrawStealth(App& app) {
 
     // ─── Apply / Restore ─────────────────────────────────
 
-    if (!s_stealthApplied) {
+    if (!app.stealthApplied) {
         if (ImGui::Button("Apply Stealth", ImVec2(200, 35))) {
             HWND hwnd = FindWindowA("MemForgeWindow", nullptr);
             if (!hwnd) hwnd = GetForegroundWindow();
 
             if (hwnd) {
-                s_stealthMgr.Apply(hwnd, s_stealthConfig);
-                s_stealthApplied = true;
+                app.stealthMgr.Apply(hwnd, app.stealthConfig);
+                app.stealthApplied = true;
             }
         }
     } else {
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
         if (ImGui::Button("Disable Stealth", ImVec2(200, 35))) {
-            s_stealthMgr.Restore();
-            s_stealthApplied = false;
+            app.stealthMgr.Restore();
+            app.stealthApplied = false;
         }
         ImGui::PopStyleColor();
 

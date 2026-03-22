@@ -77,26 +77,41 @@ void ValueFreezer::UpdateEntryDescription(int id, const std::string& desc) {
 void ValueFreezer::Start() {
     if (m_running.load()) return;
     m_running.store(true);
-    m_thread = std::thread(&ValueFreezer::FreezerLoop, this);
+    // Issue 12: Use std::jthread so Stop() can request_stop() safely
+    m_thread = std::jthread(&ValueFreezer::FreezerLoop, this);
 }
 
 void ValueFreezer::Stop() {
     m_running.store(false);
+    // Issue 12: request_stop() signals the jthread's stop_token, then join safely
     if (m_thread.joinable()) {
+        m_thread.request_stop();
         m_thread.join();
     }
 }
 
-void ValueFreezer::FreezerLoop() {
-    while (m_running.load()) {
+// Issue 11: FreezerLoop copies entries under lock, then releases lock before writes
+// Issue 12: Accepts stop_token for cooperative cancellation
+void ValueFreezer::FreezerLoop(std::stop_token st) {
+    while (m_running.load() && !st.stop_requested()) {
+        // Copy active entries under lock, then release before performing writes
+        std::vector<FrozenValue> localEntries;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             for (auto& entry : m_entries) {
-                if (entry.active && m_hProcess) {
-                    m_writer.WriteValue(entry.address, entry.value, entry.type);
+                if (entry.active) {
+                    localEntries.push_back(entry);
                 }
             }
         }
+
+        // Perform writes without holding the mutex
+        if (m_hProcess) {
+            for (auto& entry : localEntries) {
+                m_writer.WriteValue(entry.address, entry.value, entry.type);
+            }
+        }
+
         Sleep(m_intervalMs);
     }
 }

@@ -15,6 +15,9 @@ struct ProcessInfo {
     std::string windowTitle;
     std::string exePath;
     SIZE_T memoryUsage; // in bytes
+    // Issue 15: Precomputed lowercase fields for efficient per-frame filtering
+    std::string nameLower;
+    std::string titleLower;
 };
 
 struct ModuleInfo {

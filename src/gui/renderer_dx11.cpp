@@ -9,27 +9,36 @@
 #include <imgui_impl_dx11.h>
 #include <dwmapi.h>
 
+// Issue 3: Named constant for dark mode attribute instead of magic number 20
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
+
 // Forward declare message handler from imgui_impl_win32.cpp
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
     HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 namespace memforge {
 
-App* g_appInstance = nullptr;
+// Issue 4: Removed global g_appInstance singleton.
+// App pointer is now stored per-window via SetWindowLongPtr(GWLP_USERDATA).
 
 static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
         return true;
 
+    // Issue 4: Retrieve App pointer from window user data instead of global
+    App* pApp = reinterpret_cast<App*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
+
     switch (msg) {
         case WM_SIZE:
-            if (g_appInstance && wParam != SIZE_MINIMIZED) {
-                g_appInstance->HandleResize(LOWORD(lParam), HIWORD(lParam));
+            if (pApp && wParam != SIZE_MINIMIZED) {
+                pApp->HandleResize(LOWORD(lParam), HIWORD(lParam));
             }
             return 0;
         case WM_HOTKEY:
-            if (g_appInstance) {
-                g_appInstance->hotkeyManager.ProcessMessage(msg, wParam, lParam);
+            if (pApp) {
+                pApp->hotkeyManager.ProcessMessage(msg, wParam, lParam);
             }
             return 0;
         case WM_DESTROY:
@@ -58,9 +67,12 @@ bool App::InitWindow() {
 
     if (!m_hwnd) return false;
 
-    // Enable dark title bar on Windows 10/11
+    // Issue 4: Store App pointer in the window's user data so WndProc can retrieve it
+    SetWindowLongPtr(m_hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+
+    // Issue 3: Use named constant DWMWA_USE_IMMERSIVE_DARK_MODE instead of 20
     BOOL darkMode = TRUE;
-    DwmSetWindowAttribute(m_hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */,
+    DwmSetWindowAttribute(m_hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
                           &darkMode, sizeof(darkMode));
 
     return true;
@@ -68,6 +80,7 @@ bool App::InitWindow() {
 
 bool App::InitD3D() {
     DXGI_SWAP_CHAIN_DESC sd = {};
+    // Issue 2: BufferCount = 2 required for FLIP_DISCARD
     sd.BufferCount = 2;
     sd.BufferDesc.Width = 0;
     sd.BufferDesc.Height = 0;
@@ -80,7 +93,8 @@ bool App::InitD3D() {
     sd.SampleDesc.Count = 1;
     sd.SampleDesc.Quality = 0;
     sd.Windowed = TRUE;
-    sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+    // Issue 2: Use FLIP_DISCARD instead of DISCARD for better performance
+    sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 
     UINT createFlags = 0;
 #ifdef _DEBUG

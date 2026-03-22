@@ -71,9 +71,31 @@ void DrawHexViewer(App& app) {
 
     ImGui::Separator();
 
-    // Read memory
+    // Issue 17: Cache the last read buffer; only call ReadProcessMemory when
+    // address or dimensions change, or after a throttle interval (~16 frames).
     size_t totalBytes = app.hexViewColumns * app.hexViewRows;
-    std::vector<uint8_t> data = app.writer.ReadBytes(app.hexViewAddress, totalBytes);
+
+    bool needsRefresh = false;
+    if (app.hexViewAddress   != app.hexCacheAddress  ||
+        app.hexViewColumns   != app.hexCacheColumns  ||
+        app.hexViewRows      != app.hexCacheRows) {
+        needsRefresh = true;
+    } else {
+        app.hexCacheFrameCounter++;
+        if (app.hexCacheFrameCounter >= 16) {
+            needsRefresh = true;
+            app.hexCacheFrameCounter = 0;
+        }
+    }
+
+    if (needsRefresh) {
+        app.hexCacheBuffer = app.writer.ReadBytes(app.hexViewAddress, totalBytes);
+        app.hexCacheAddress = app.hexViewAddress;
+        app.hexCacheColumns = app.hexViewColumns;
+        app.hexCacheRows    = app.hexViewRows;
+    }
+
+    const std::vector<uint8_t>& data = app.hexCacheBuffer;
 
     if (data.empty()) {
         ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),

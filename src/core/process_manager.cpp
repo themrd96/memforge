@@ -1,5 +1,6 @@
 #include "core/process_manager.h"
 #include <sstream>
+#include <unordered_map>
 
 namespace memforge {
 
@@ -25,10 +26,45 @@ std::wstring ProcessManager::Utf8ToWide(const std::string& utf8) {
     return result;
 }
 
+// ─── Issue 14: Build pid->windowTitle map once via a single EnumWindows call ──
+
+struct EnumAllWindowsData {
+    std::unordered_map<DWORD, std::string>* pidToTitle;
+};
+
+static BOOL CALLBACK EnumAllWindowsProc(HWND hwnd, LPARAM lParam) {
+    auto* data = reinterpret_cast<EnumAllWindowsData*>(lParam);
+    if (!IsWindowVisible(hwnd)) return TRUE;
+
+    wchar_t title[512] = {};
+    GetWindowTextW(hwnd, title, 512);
+    if (wcslen(title) == 0) return TRUE;
+
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    if (pid == 0) return TRUE;
+
+    // Only record first visible titled window per pid
+    if (data->pidToTitle->find(pid) == data->pidToTitle->end()) {
+        int size = WideCharToMultiByte(CP_UTF8, 0, title, -1, nullptr, 0, nullptr, nullptr);
+        std::string titleUtf8(size - 1, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, title, -1, titleUtf8.data(), size, nullptr, nullptr);
+        (*data->pidToTitle)[pid] = std::move(titleUtf8);
+    }
+    return TRUE;
+}
+
 // ─── Enumerate all processes ──────────────────────────────
 
 std::vector<ProcessInfo> ProcessManager::EnumerateProcesses() {
     std::vector<ProcessInfo> result;
+
+    // Issue 14: Build the pid->title map once before the process loop
+    std::unordered_map<DWORD, std::string> pidToTitle;
+    {
+        EnumAllWindowsData data{ &pidToTitle };
+        EnumWindows(EnumAllWindowsProc, reinterpret_cast<LPARAM>(&data));
+    }
 
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE) return result;
@@ -63,7 +99,12 @@ std::vector<ProcessInfo> ProcessManager::EnumerateProcesses() {
                 CloseHandle(hProc);
             }
 
-            info.windowTitle = GetProcessWindowTitle(pe.th32ProcessID);
+            // Issue 14: Look up title from the prebuilt map instead of calling EnumWindows per process
+            auto it = pidToTitle.find(pe.th32ProcessID);
+            if (it != pidToTitle.end()) {
+                info.windowTitle = it->second;
+            }
+
             result.push_back(std::move(info));
         } while (Process32NextW(snapshot, &pe));
     }
@@ -110,9 +151,11 @@ std::vector<ModuleInfo> ProcessManager::GetModules(DWORD pid) {
 // ─── Open process for memory operations ──────────────────
 
 HANDLE ProcessManager::OpenTargetProcess(DWORD pid) {
+    // Issue 13: Only request the minimum privileges needed for memory operations.
+    // PROCESS_CREATE_THREAD is only needed for DLL injection and is not requested here.
     return OpenProcess(
         PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION |
-        PROCESS_QUERY_INFORMATION | PROCESS_CREATE_THREAD,
+        PROCESS_QUERY_INFORMATION,
         FALSE, pid
     );
 }
@@ -137,7 +180,7 @@ std::vector<ProcessInfo> ProcessManager::FindProcessByName(const std::string& na
     return filtered;
 }
 
-// ─── Window title ─────────────────────────────────────────
+// ─── Window title (kept for external callers) ─────────────
 
 struct EnumWindowData {
     DWORD pid;

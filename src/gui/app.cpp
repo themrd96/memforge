@@ -6,20 +6,24 @@
 #include <thread>
 #include <sstream>
 #include <fstream>
+// Issue 7: COM file dialog headers
+#include <shobjidl.h>
+#include <comdef.h>
 
 namespace memforge {
 
-extern App* g_appInstance;
-
 App::App() {
-    g_appInstance = this;
     scanConfig.valueType = ValueType::Int32;
     scanConfig.scanMode = ScanMode::ExactValue;
 }
 
 App::~App() {
+    // Issue 6: Stop jthread scan thread before destruction
+    if (m_scanThread.joinable()) {
+        m_scanThread.request_stop();
+        m_scanThread.join();
+    }
     DetachFromProcess();
-    g_appInstance = nullptr;
 }
 
 void App::AttachToProcess(DWORD pid) {
@@ -55,6 +59,12 @@ void App::AttachToProcess(DWORD pid) {
 void App::DetachFromProcess() {
     if (!processAttached) return;
 
+    // Issue 6: Stop and join scan thread on detach
+    if (m_scanThread.joinable()) {
+        m_scanThread.request_stop();
+        m_scanThread.join();
+    }
+
     // Eject speedhack if active
     if (speedHack.IsInjected()) {
         speedHack.Eject();
@@ -86,10 +96,26 @@ void App::DetachFromProcess() {
     firstScanDone = false;
     speedHackEnabled = false;
     speedValue = 1.0f;
+
+    // Issue 18: Reset stealth state on detach
+    stealthApplied = false;
+    stealthMgr = StealthManager{};
+    stealthConfig = StealthConfig{};
+    stealthDetectionCheckTimer = 0.0f;
+    stealthHasCheckedDetection = false;
 }
 
 void App::RefreshProcessList() {
     processList = ProcessManager::EnumerateProcesses();
+    // Issue 15: Precompute lowercase name/title for each process
+    for (auto& p : processList) {
+        p.nameLower = p.name;
+        std::transform(p.nameLower.begin(), p.nameLower.end(),
+                       p.nameLower.begin(), ::tolower);
+        p.titleLower = p.windowTitle;
+        std::transform(p.titleLower.begin(), p.titleLower.end(),
+                       p.titleLower.begin(), ::tolower);
+    }
 }
 
 void App::StartScan() {
@@ -118,15 +144,16 @@ void App::StartScan() {
     scanProgress = 0.0f;
     scanResultsFound = 0;
 
-    // Run scan in background thread
-    std::thread([this]() {
-        scanner.FirstScan(scanConfig, [this](float progress, size_t found) {
+    // Issue 6: Use std::jthread stored as member instead of detached std::thread
+    m_scanThread = std::jthread([this](std::stop_token st) {
+        scanner.FirstScan(scanConfig, [this, &st](float progress, size_t found) {
+            if (st.stop_requested()) return;
             scanProgress = progress;
             scanResultsFound = found;
         });
         firstScanDone = true;
         scanInProgress = false;
-    }).detach();
+    });
 }
 
 void App::NextScan() {
@@ -152,13 +179,15 @@ void App::NextScan() {
     scanInProgress = true;
     scanProgress = 0.0f;
 
-    std::thread([this]() {
-        scanner.NextScan(scanConfig, [this](float progress, size_t found) {
+    // Issue 6: Use std::jthread stored as member instead of detached std::thread
+    m_scanThread = std::jthread([this](std::stop_token st) {
+        scanner.NextScan(scanConfig, [this, &st](float progress, size_t found) {
+            if (st.stop_requested()) return;
             scanProgress = progress;
             scanResultsFound = found;
         });
         scanInProgress = false;
-    }).detach();
+    });
 }
 
 void App::ResetScan() {
@@ -188,16 +217,69 @@ void App::DrawMenuBar() {
                     SaveTable(currentTablePath);
                 }
             }
+            // Issue 7: Use IFileSaveDialog for "Save Table As..."
             if (ImGui::MenuItem("Save Table As...")) {
-                // Simple approach: save to a default filename
-                currentTablePath = "memforge_table.mft";
-                SaveTable(currentTablePath);
+                IFileSaveDialog* pDlg = nullptr;
+                if (SUCCEEDED(CoCreateInstance(CLSID_FileSaveDialog, nullptr,
+                                               CLSCTX_INPROC_SERVER,
+                                               IID_PPV_ARGS(&pDlg)))) {
+                    COMDLG_FILTERSPEC filter[] = {
+                        { L"MemForge Table (*.mft)", L"*.mft" },
+                        { L"All Files (*.*)", L"*.*" }
+                    };
+                    pDlg->SetFileTypes(2, filter);
+                    pDlg->SetDefaultExtension(L"mft");
+                    pDlg->SetFileName(L"memforge_table.mft");
+                    if (SUCCEEDED(pDlg->Show(m_hwnd))) {
+                        IShellItem* pItem = nullptr;
+                        if (SUCCEEDED(pDlg->GetResult(&pItem))) {
+                            PWSTR pszPath = nullptr;
+                            if (SUCCEEDED(pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszPath))) {
+                                int size = WideCharToMultiByte(CP_UTF8, 0, pszPath, -1,
+                                                               nullptr, 0, nullptr, nullptr);
+                                std::string path(size - 1, '\0');
+                                WideCharToMultiByte(CP_UTF8, 0, pszPath, -1,
+                                                   path.data(), size, nullptr, nullptr);
+                                CoTaskMemFree(pszPath);
+                                currentTablePath = path;
+                                SaveTable(currentTablePath);
+                            }
+                            pItem->Release();
+                        }
+                    }
+                    pDlg->Release();
+                }
             }
+            // Issue 7: Use IFileOpenDialog for "Load Table"
             if (ImGui::MenuItem("Load Table", "Ctrl+O")) {
-                if (!currentTablePath.empty()) {
-                    LoadTable(currentTablePath);
-                } else {
-                    LoadTable("memforge_table.mft");
+                IFileOpenDialog* pDlg = nullptr;
+                if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr,
+                                               CLSCTX_INPROC_SERVER,
+                                               IID_PPV_ARGS(&pDlg)))) {
+                    COMDLG_FILTERSPEC filter[] = {
+                        { L"MemForge Table (*.mft)", L"*.mft" },
+                        { L"All Files (*.*)", L"*.*" }
+                    };
+                    pDlg->SetFileTypes(2, filter);
+                    pDlg->SetDefaultExtension(L"mft");
+                    if (SUCCEEDED(pDlg->Show(m_hwnd))) {
+                        IShellItem* pItem = nullptr;
+                        if (SUCCEEDED(pDlg->GetResult(&pItem))) {
+                            PWSTR pszPath = nullptr;
+                            if (SUCCEEDED(pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszPath))) {
+                                int size = WideCharToMultiByte(CP_UTF8, 0, pszPath, -1,
+                                                               nullptr, 0, nullptr, nullptr);
+                                std::string path(size - 1, '\0');
+                                WideCharToMultiByte(CP_UTF8, 0, pszPath, -1,
+                                                   path.data(), size, nullptr, nullptr);
+                                CoTaskMemFree(pszPath);
+                                currentTablePath = path;
+                                LoadTable(currentTablePath);
+                            }
+                            pItem->Release();
+                        }
+                    }
+                    pDlg->Release();
                 }
             }
             ImGui::Separator();
@@ -236,20 +318,32 @@ void App::DrawMenuBar() {
             ImGui::EndMenu();
         }
 
-        // Right-aligned status
-        float statusWidth = 400.0f;
-        ImGui::SameLine(ImGui::GetWindowWidth() - statusWidth);
+        // Right-aligned status — Issue 5: compute widths dynamically
+        {
+            const float padding = 10.0f;
+            std::string statusText;
+            if (processAttached) {
+                char buf[256];
+                snprintf(buf, sizeof(buf), "Attached: %s (PID: %lu)",
+                         targetName.c_str(), targetPid);
+                statusText = buf;
+            } else {
+                statusText = "No process attached";
+            }
+            float statusW = ImGui::CalcTextSize(statusText.c_str()).x + padding;
+            ImGui::SetCursorPosX(ImGui::GetWindowWidth() - statusW);
+            if (processAttached) {
+                ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.3f, 1.0f), "%s", statusText.c_str());
+            } else {
+                ImGui::TextColored(ImVec4(0.9f, 0.3f, 0.2f, 1.0f), "%s", statusText.c_str());
+            }
 
-        if (processAttached) {
-            ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.3f, 1.0f),
-                             "Attached: %s (PID: %lu)", targetName.c_str(), targetPid);
-        } else {
-            ImGui::TextColored(ImVec4(0.9f, 0.3f, 0.2f, 1.0f), "No process attached");
-        }
-
-        if (!ProcessManager::IsElevated()) {
-            ImGui::SameLine();
-            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "[!] Not Admin");
+            if (!ProcessManager::IsElevated()) {
+                const char* adminText = "[!] Not Admin";
+                float adminW = ImGui::CalcTextSize(adminText).x + padding;
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "%s", adminText);
+            }
         }
 
         ImGui::EndMainMenuBar();
@@ -304,30 +398,44 @@ void App::DrawStatusBar() {
             ImGui::Text("Ready");
         }
 
+        // Issue 5: DPI-independent status bar positions using CalcTextSize
+        const float padding = 10.0f;
+        float winW = ImGui::GetWindowWidth();
+
         // Engine badge
-        ImGui::SameLine(ImGui::GetWindowWidth() - 450);
         if (engineDetected) {
-            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
-                             "[%s]", detectedEngine.engineName.c_str());
+            char engineBuf[128];
+            snprintf(engineBuf, sizeof(engineBuf), "[%s]",
+                     detectedEngine.engineName.c_str());
+            float engineW = ImGui::CalcTextSize(engineBuf).x + padding;
+            ImGui::SetCursorPosX(winW - engineW - 250.0f);
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "%s", engineBuf);
             if (ImGui::IsItemHovered() && !detectedEngine.notes.empty()) {
                 ImGui::SetTooltip("%s", detectedEngine.notes.c_str());
             }
         }
 
-        ImGui::SameLine(ImGui::GetWindowWidth() - 250);
+        // Frozen values count
         if (freezer.IsRunning()) {
             int activeCount = 0;
             for (auto& e : freezer.GetEntries()) {
                 if (e.active) activeCount++;
             }
             if (activeCount > 0) {
-                ImGui::TextColored(ImVec4(0.3f, 0.8f, 1.0f, 1.0f),
-                                 "Frozen: %d values", activeCount);
+                char frozenBuf[64];
+                snprintf(frozenBuf, sizeof(frozenBuf), "Frozen: %d values", activeCount);
+                float frozenW = ImGui::CalcTextSize(frozenBuf).x + padding;
+                ImGui::SetCursorPosX(winW - frozenW - 100.0f);
+                ImGui::TextColored(ImVec4(0.3f, 0.8f, 1.0f, 1.0f), "%s", frozenBuf);
             }
         }
 
-        ImGui::SameLine(ImGui::GetWindowWidth() - 120);
-        ImGui::Text("FPS: %.0f", ImGui::GetIO().Framerate);
+        // FPS
+        char fpsBuf[32];
+        snprintf(fpsBuf, sizeof(fpsBuf), "FPS: %.0f", ImGui::GetIO().Framerate);
+        float fpsW = ImGui::CalcTextSize(fpsBuf).x + padding;
+        ImGui::SetCursorPosX(winW - fpsW);
+        ImGui::Text("%s", fpsBuf);
     }
     ImGui::End();
 
@@ -343,6 +451,9 @@ int App::Run() {
 
     ShowWindow(m_hwnd, SW_SHOWDEFAULT);
     UpdateWindow(m_hwnd);
+
+    // Issue 7: Initialize COM for file dialogs
+    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
     // Setup ImGui
     IMGUI_CHECKVERSION();
@@ -505,6 +616,8 @@ int App::Run() {
     ImGui::DestroyContext();
     CleanupD3D();
     DestroyWindow(m_hwnd);
+
+    CoUninitialize();
 
     return 0;
 }

@@ -4,6 +4,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <thread>
 
 #include "core/process_manager.h"
 #include "core/memory_scanner.h"
@@ -21,6 +22,7 @@
 #include "core/undo_history.h"
 #include "core/anti_anticheat.h"
 #include "speedhack/speedhack.h"
+#include "core/stealth.h"
 
 namespace memforge {
 
@@ -82,6 +84,12 @@ public:
     char hexAddrInput[64] = {};
     int hexViewColumns = 16;
     int hexViewRows = 32;
+    // Issue 17: Hex viewer read cache
+    std::vector<uint8_t> hexCacheBuffer;
+    uintptr_t hexCacheAddress = ~uintptr_t(0);
+    int hexCacheColumns = 0;
+    int hexCacheRows = 0;
+    int hexCacheFrameCounter = 0;
 
     // Structure Dissector
     StructureDissector structDissector;
@@ -141,6 +149,18 @@ public:
 
     // Undo History
     UndoHistory undoHistory;
+
+    // Issue 18: Stealth state moved from file-scope statics in ui_stealth.cpp to App members
+    StealthManager stealthMgr;
+    StealthConfig stealthConfig;
+    char stealthCustomTitle[256] = {};
+    bool stealthApplied = false;
+    float stealthDetectionCheckTimer = 0.0f;
+    StealthManager::DetectionStatus stealthLastDetection;
+    bool stealthHasCheckedDetection = false;
+
+    // Issue 6: jthread for scan operations (stored as member for lifecycle management)
+    std::jthread m_scanThread;
 
     // UI state
     bool showProcessSelector = true;

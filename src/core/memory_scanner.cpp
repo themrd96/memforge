@@ -4,6 +4,7 @@
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
+#include <latch>
 
 namespace memforge {
 
@@ -28,9 +29,10 @@ void MemoryScanner::Reset() {
 
 void MemoryScanner::CancelScan() {
     m_cancelRequested.store(true);
-    // Wait for scan to finish
-    while (m_scanning.load()) {
-        Sleep(10);
+    // Issue 8: Use condition_variable instead of busy-wait polling
+    {
+        std::unique_lock<std::mutex> lock(m_scanDoneMutex);
+        m_scanDoneCV.wait(lock, [this] { return !m_scanning.load(); });
     }
     m_cancelRequested.store(false);
 }
@@ -351,7 +353,9 @@ bool MemoryScanner::FirstScan(const ScanConfig& config, ScanProgressCallback pro
             }
         }
     } else {
-        // Multi-threaded scan
+        // Issue 10: Use std::latch for proper thread-completion detection
+        std::latch doneLatch(numThreads);
+
         std::vector<std::thread> threads;
         std::vector<std::vector<ScanResult>> threadResults(numThreads);
         std::atomic<size_t> regionIndex{0};
@@ -361,23 +365,18 @@ bool MemoryScanner::FirstScan(const ScanConfig& config, ScanProgressCallback pro
             threads.emplace_back([&, t]() {
                 size_t idx;
                 while ((idx = regionIndex.fetch_add(1)) < filteredRegions.size()) {
-                    if (m_cancelRequested.load()) return;
+                    if (m_cancelRequested.load()) break;
                     ScanRegion(filteredRegions[idx], config, threadResults[t]);
                     scannedBytesAtomic.fetch_add(filteredRegions[idx].size);
                 }
+                // Signal this thread is done
+                doneLatch.count_down();
             });
         }
 
         // Progress reporting while threads work
-        while (true) {
-            bool allDone = true;
-            for (auto& t : threads) {
-                if (t.joinable()) {
-                    allDone = false;
-                    break;
-                }
-            }
-
+        // Wait with a timeout approach: poll until latch is satisfied
+        while (!doneLatch.try_wait()) {
             SIZE_T current = scannedBytesAtomic.load();
             size_t totalFound = 0;
             for (auto& tr : threadResults) totalFound += tr.size();
@@ -388,8 +387,6 @@ bool MemoryScanner::FirstScan(const ScanConfig& config, ScanProgressCallback pro
                     : 0.0f;
                 progressCb(progress, totalFound);
             }
-
-            if (regionIndex.load() >= filteredRegions.size()) break;
             Sleep(50);
         }
 
@@ -421,6 +418,8 @@ bool MemoryScanner::FirstScan(const ScanConfig& config, ScanProgressCallback pro
     }
 
     m_scanning.store(false);
+    // Issue 8: Notify CancelScan waiters that scanning is done
+    m_scanDoneCV.notify_all();
     return true;
 }
 
@@ -439,8 +438,9 @@ bool MemoryScanner::NextScan(const ScanConfig& config, ScanProgressCallback prog
     for (size_t i = 0; i < total; i++) {
         if (m_cancelRequested.load()) break;
 
-        ScanValue newValue = ReadValue(m_results[i].address, config.valueType);
+        // Issue 9: Capture prevValue before reading newValue
         ScanValue prevValue = m_results[i].currentValue;
+        ScanValue newValue = ReadValue(m_results[i].address, config.valueType);
 
         bool matches = false;
 
@@ -452,7 +452,8 @@ bool MemoryScanner::NextScan(const ScanConfig& config, ScanProgressCallback prog
             config.scanMode == ScanMode::DecreasedBy) {
             matches = CompareValues(newValue, prevValue, config);
         } else {
-            // For exact/range comparisons, check against target
+            // Issue 9: For exact/range comparisons, compare against target value
+            // (pass newValue as both args; CompareValues uses config.targetValue for these modes)
             matches = CompareValues(newValue, newValue, config);
         }
 
@@ -460,6 +461,7 @@ bool MemoryScanner::NextScan(const ScanConfig& config, ScanProgressCallback prog
             ScanResult result;
             result.address = m_results[i].address;
             result.currentValue = newValue;
+            // Issue 9: Store the correct previous value (captured before the read)
             result.previousValue = prevValue;
             newResults.push_back(result);
         }
@@ -479,6 +481,8 @@ bool MemoryScanner::NextScan(const ScanConfig& config, ScanProgressCallback prog
     }
 
     m_scanning.store(false);
+    // Issue 8: Notify CancelScan waiters that scanning is done
+    m_scanDoneCV.notify_all();
     return true;
 }
 

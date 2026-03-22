@@ -9,6 +9,9 @@
 #include "core/memory_scanner.h"
 #include "core/memory_writer.h"
 
+// Issue 12: Use std::jthread for cooperative stop support
+#include <stop_token>
+
 namespace memforge {
 
 struct FrozenValue {
@@ -57,14 +60,16 @@ public:
     int GetInterval() const { return m_intervalMs; }
 
 private:
-    void FreezerLoop();
+    // Issue 12: jthread takes a stop_token for cooperative cancellation
+    void FreezerLoop(std::stop_token st);
 
     HANDLE m_hProcess = nullptr;
     MemoryWriter m_writer;
     std::vector<FrozenValue> m_entries;
     std::mutex m_mutex;
     std::atomic<bool> m_running{false};
-    std::thread m_thread;
+    // Issue 12: Use std::jthread instead of std::thread
+    std::jthread m_thread;
     int m_nextId = 1;
     int m_intervalMs = 50; // 20 times per second
 };
