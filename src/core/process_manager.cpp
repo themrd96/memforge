@@ -62,6 +62,12 @@ static BOOL CALLBACK EnumAllWindowsProc(HWND hwnd, LPARAM lParam) {
 std::vector<ProcessInfo> ProcessManager::EnumerateProcesses() {
     std::vector<ProcessInfo> result;
 
+    // Check once whether ntdll is hooked before the enumeration loop.
+    // If hooked, we must NOT call OpenProcess() on any process during enumeration —
+    // the hook handler may kill the protected game process as a side effect of any
+    // OpenProcess call it intercepts, even for harmless access masks.
+    const bool ntdllHooked = IsNtOpenProcessHooked();
+
     // Issue 14: Build the pid->title map once before the process loop
     std::unordered_map<DWORD, std::string> pidToTitle;
     {
@@ -82,24 +88,24 @@ std::vector<ProcessInfo> ProcessManager::EnumerateProcesses() {
             info.name = WideToUtf8(pe.szExeFile);
             info.memoryUsage = 0;
 
-            // Try to get more info by opening the process
-            HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
-                                       FALSE, pe.th32ProcessID);
-            if (hProc) {
-                // Get exe path
-                wchar_t path[MAX_PATH] = {};
-                DWORD pathSize = MAX_PATH;
-                if (QueryFullProcessImageNameW(hProc, 0, path, &pathSize)) {
-                    info.exePath = WideToUtf8(path);
-                }
+            // Only open each process for extra info when ntdll is clean.
+            // When hooked, skip this entirely — any OpenProcess call routes
+            // through the AC handler which may kill the protected process.
+            if (!ntdllHooked) {
+                HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,
+                                           FALSE, pe.th32ProcessID);
+                if (hProc) {
+                    wchar_t path[MAX_PATH] = {};
+                    DWORD pathSize = MAX_PATH;
+                    if (QueryFullProcessImageNameW(hProc, 0, path, &pathSize))
+                        info.exePath = WideToUtf8(path);
 
-                // Get memory usage
-                PROCESS_MEMORY_COUNTERS pmc{};
-                if (GetProcessMemoryInfo(hProc, &pmc, sizeof(pmc))) {
-                    info.memoryUsage = pmc.WorkingSetSize;
-                }
+                    PROCESS_MEMORY_COUNTERS pmc{};
+                    if (GetProcessMemoryInfo(hProc, &pmc, sizeof(pmc)))
+                        info.memoryUsage = pmc.WorkingSetSize;
 
-                CloseHandle(hProc);
+                    CloseHandle(hProc);
+                }
             }
 
             // Issue 14: Look up title from the prebuilt map instead of calling EnumWindows per process
