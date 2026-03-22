@@ -60,6 +60,7 @@ public:
     std::vector<ProcessInfo> processList;
     bool processAttached = false;
     char processFilter[256] = {};
+    AttachMethod lastAttachMethod = AttachMethod::Normal; // how we opened the process
 
     // Scanner
     MemoryScanner scanner;

@@ -31,8 +31,11 @@ App::~App() {
 void App::AttachToProcess(DWORD pid) {
     DetachFromProcess();
 
-    targetProcess = ProcessManager::OpenTargetProcess(pid);
-    if (!targetProcess) return;
+    auto openResult = ProcessManager::OpenTargetProcess(pid);
+    if (!openResult.Ok()) return;
+
+    targetProcess    = openResult.handle;
+    lastAttachMethod = openResult.method;
 
     targetPid = pid;
     processAttached = true;
@@ -328,8 +331,14 @@ void App::DrawMenuBar() {
             std::string statusText;
             if (processAttached) {
                 char buf[256];
-                snprintf(buf, sizeof(buf), "Attached: %s (PID: %lu)",
-                         targetName.c_str(), targetPid);
+                // Show attach method so the user knows if a bypass was used
+                const char* methodTag = "";
+                if (lastAttachMethod == AttachMethod::DirectSyscall)
+                    methodTag = " [syscall bypass]";
+                else if (lastAttachMethod == AttachMethod::DaclBypass)
+                    methodTag = " [DACL bypass]";
+                snprintf(buf, sizeof(buf), "Attached: %s (PID: %lu)%s",
+                         targetName.c_str(), targetPid, methodTag);
                 statusText = buf;
             } else {
                 statusText = "No process attached";

@@ -91,7 +91,7 @@ add_library(memforge_core STATIC
     src/core/manual_mapper.cpp
 )
 target_include_directories(memforge_core PUBLIC ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(memforge_core PUBLIC psapi dwmapi lua54 iphlpapi ws2_32)
+target_link_libraries(memforge_core PUBLIC psapi dwmapi lua54 iphlpapi ws2_32 advapi32)
 
 # ─── Speedhack DLL (injected into target) ───
 if(MEMFORGE_BUILD_SPEEDHACK)

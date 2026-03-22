@@ -1,6 +1,9 @@
 #include "core/process_manager.h"
 #include <sstream>
 #include <unordered_map>
+#include <winternl.h>
+
+#pragma comment(lib, "advapi32.lib")
 
 namespace memforge {
 
@@ -148,16 +151,133 @@ std::vector<ModuleInfo> ProcessManager::GetModules(DWORD pid) {
     return result;
 }
 
+// ─── Direct syscall helpers ───────────────────────────────
+
+// Read the real syscall number for NtOpenProcess from ntdll.dll on disk.
+// This is necessary because some anti-cheats patch the in-memory ntdll stub
+// with a JMP to their own handler (inline hook), making the stub useless.
+// Reading from disk gives us the unhooked bytes and the real syscall index.
+UINT16 ProcessManager::ReadNtOpenProcessSyscallNumber() {
+    HANDLE hFile = CreateFileW(L"C:\\Windows\\System32\\ntdll.dll",
+        GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) return 0xFFFF;
+
+    DWORD fileSize = GetFileSize(hFile, nullptr);
+    auto buf = std::make_unique<BYTE[]>(fileSize);
+    DWORD bytesRead = 0;
+    ReadFile(hFile, buf.get(), fileSize, &bytesRead, nullptr);
+    CloseHandle(hFile);
+
+    if (bytesRead != fileSize) return 0xFFFF;
+
+    auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(buf.get());
+    auto* nt  = reinterpret_cast<IMAGE_NT_HEADERS*>(buf.get() + dos->e_lfanew);
+    auto* exp = reinterpret_cast<IMAGE_EXPORT_DIRECTORY*>(
+        buf.get() + nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
+
+    auto* names = reinterpret_cast<DWORD*>(buf.get() + exp->AddressOfNames);
+    auto* ords  = reinterpret_cast<WORD*> (buf.get() + exp->AddressOfNameOrdinals);
+    auto* funcs = reinterpret_cast<DWORD*>(buf.get() + exp->AddressOfFunctions);
+
+    for (DWORD i = 0; i < exp->NumberOfNames; i++) {
+        const char* name = reinterpret_cast<const char*>(buf.get() + names[i]);
+        if (strcmp(name, "NtOpenProcess") != 0) continue;
+
+        BYTE* fn = buf.get() + funcs[ords[i]];
+        // Unhooked stub starts with: 4C 8B D1 (mov r10, rcx) B8 XX XX 00 00 (mov eax, syscall#)
+        if (fn[0] == 0x4C && fn[1] == 0x8B && fn[2] == 0xD1 && fn[3] == 0xB8) {
+            return *reinterpret_cast<UINT16*>(fn + 4);
+        }
+        break; // found but hooked on disk too — give up
+    }
+    return 0xFFFF;
+}
+
+// Execute NtOpenProcess via a hand-rolled syscall stub.
+// This jumps directly to the kernel, completely skipping any ntdll hooks.
+HANDLE ProcessManager::DirectSyscallOpenProcess(UINT16 syscallNum, DWORD pid, ACCESS_MASK access) {
+    if (syscallNum == 0xFFFF) return nullptr;
+
+    // Build: mov r10,rcx / mov eax,N / syscall / ret
+    BYTE code[] = { 0x4C,0x8B,0xD1, 0xB8,0x00,0x00,0x00,0x00, 0x0F,0x05, 0xC3 };
+    *reinterpret_cast<UINT16*>(code + 4) = syscallNum;
+
+    void* stub = VirtualAlloc(nullptr, sizeof(code),
+        MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!stub) return nullptr;
+    memcpy(stub, code, sizeof(code));
+
+    using NtOpenProcessFn = NTSTATUS(NTAPI*)(
+        PHANDLE, ACCESS_MASK, POBJECT_ATTRIBUTES, PCLIENT_ID);
+
+    HANDLE hProcess = nullptr;
+    OBJECT_ATTRIBUTES oa{};
+    oa.Length = sizeof(oa);
+    CLIENT_ID cid{ reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(pid)), nullptr };
+
+    reinterpret_cast<NtOpenProcessFn>(stub)(&hProcess, access, &oa, &cid);
+
+    VirtualFree(stub, 0, MEM_RELEASE);
+    return hProcess;
+}
+
+// DACL bypass: open with WRITE_DAC (an implicit owner right not present in most
+// deny masks), wipe the DACL to NULL (grants Everyone full access), then reopen
+// with the full desired access mask.
+HANDLE ProcessManager::TryDaclBypass(UINT16 syscallNum, DWORD pid, ACCESS_MASK desiredAccess) {
+    // Step 1 — get a WRITE_DAC handle (owner implicit right, rarely denied)
+    HANDLE hWriteDac = DirectSyscallOpenProcess(syscallNum, pid, WRITE_DAC);
+    if (!hWriteDac) return nullptr;
+
+    // Step 2 — replace the DACL with NULL (full access to everyone)
+    DWORD res = SetSecurityInfo(hWriteDac, SE_KERNEL_OBJECT,
+        DACL_SECURITY_INFORMATION, nullptr, nullptr, nullptr, nullptr);
+    CloseHandle(hWriteDac);
+
+    if (res != ERROR_SUCCESS) return nullptr;
+
+    // Step 3 — now open freely with the originally desired access
+    return DirectSyscallOpenProcess(syscallNum, pid, desiredAccess);
+}
+
 // ─── Open process for memory operations ──────────────────
 
-HANDLE ProcessManager::OpenTargetProcess(DWORD pid) {
-    // Issue 13: Only request the minimum privileges needed for memory operations.
-    // PROCESS_CREATE_THREAD is only needed for DLL injection and is not requested here.
-    return OpenProcess(
+// Escalating attach: tries progressively more aggressive methods until one works.
+//  1. Normal OpenProcess            — works against unprotected processes
+//  2. Direct syscall                — bypasses user-mode ntdll inline hooks
+//  3. DACL bypass + direct syscall  — bypasses DACL-based lockouts (e.g. NinjaEye)
+OpenProcessResult ProcessManager::OpenTargetProcess(DWORD pid) {
+    constexpr ACCESS_MASK kDesired =
         PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION |
-        PROCESS_QUERY_INFORMATION,
-        FALSE, pid
-    );
+        PROCESS_QUERY_INFORMATION;
+
+    OpenProcessResult result{};
+
+    // ── Method 1: Normal ─────────────────────────────────────────────────────
+    result.handle = OpenProcess(kDesired, FALSE, pid);
+    if (result.handle) {
+        result.method = AttachMethod::Normal;
+        return result;
+    }
+
+    // ── Method 2: Direct syscall (bypasses ntdll inline hooks) ───────────────
+    UINT16 sysNum = ReadNtOpenProcessSyscallNumber();
+    result.handle  = DirectSyscallOpenProcess(sysNum, pid, kDesired);
+    if (result.handle) {
+        result.method = AttachMethod::DirectSyscall;
+        return result;
+    }
+
+    // ── Method 3: DACL bypass (WRITE_DAC owner right → NULL DACL → reopen) ──
+    result.handle = TryDaclBypass(sysNum, pid, kDesired);
+    if (result.handle) {
+        result.method = AttachMethod::DaclBypass;
+        return result;
+    }
+
+    result.method     = AttachMethod::Failed;
+    result.lastStatus = GetLastError();
+    return result;
 }
 
 // ─── Find process by name ────────────────────────────────
