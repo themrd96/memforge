@@ -17,7 +17,7 @@ void DrawStructureDissector(App& app) {
     if (!ImGui::BeginTabBar("StructTabs")) { ImGui::End(); return; }
 
     // ── Tab 1: Structure Dissector ───────────────────────────────────────────
-    if (!ImGui::BeginTabItem("Dissector")) { ImGui::EndTabBar(); ImGui::End(); return; }
+    if (ImGui::BeginTabItem("Dissector")) {
 
     // Address input
     ImGui::Text("Base Address:");
@@ -255,6 +255,7 @@ void DrawStructureDissector(App& app) {
                 app.currentStruct.fields.size(), app.currentStruct.GetTotalSize());
 
     ImGui::EndTabItem();
+    } // end Dissector tab
 
     // ── Tab 2: Nearby Search ─────────────────────────────────────────────────
     if (ImGui::BeginTabItem("Nearby Search")) {
