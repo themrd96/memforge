@@ -78,7 +78,7 @@ void ValueFreezer::Start() {
     if (m_running.load()) return;
     m_running.store(true);
     // Issue 12: Use std::jthread so Stop() can request_stop() safely
-    m_thread = std::jthread(&ValueFreezer::FreezerLoop, this);
+    m_thread = std::jthread([this](std::stop_token st) { FreezerLoop(st); });
 }
 
 void ValueFreezer::Stop() {
