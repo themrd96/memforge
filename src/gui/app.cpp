@@ -57,7 +57,44 @@ void App::AttachToProcess(DWORD pid) {
     if (openResult.method == AttachMethod::DaclBypass ||
         openResult.method == AttachMethod::DirectSyscall) {
         m_suspendedGameThreads = std::move(initialSuspend);
-        // initialSuspend is now empty — threads stay suspended
+
+        // Watch for new threads spawned after our initial freeze and suspend
+        // them immediately. This prevents the watchdog from re-arming itself
+        // on a freshly created thread.
+        m_threadWatcher = std::jthread([pid, this](std::stop_token st) {
+            while (!st.stop_requested()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+                HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+                if (snap == INVALID_HANDLE_VALUE) continue;
+
+                // Build set of already-known thread IDs from our suspended list
+                // (we track TIDs separately so we can check quickly)
+                THREADENTRY32 te{ sizeof(te) };
+                if (Thread32First(snap, &te)) {
+                    do {
+                        if (te.th32OwnerProcessID != pid) continue;
+
+                        // Try to open and suspend — if the thread is already
+                        // suspended by us, SuspendThread just increments its
+                        // suspend count (harmless). We only care about new ones.
+                        HANDLE hThread = OpenThread(THREAD_SUSPEND_RESUME, FALSE,
+                                                    te.th32ThreadID);
+                        if (!hThread) continue;
+
+                        DWORD prevCount = SuspendThread(hThread);
+                        if (prevCount == 0) {
+                            // Was running — it's a new thread. Add to our list.
+                            m_suspendedGameThreads.push_back(hThread);
+                        } else {
+                            // Already suspended — don't double-count it
+                            CloseHandle(hThread);
+                        }
+                    } while (Thread32Next(snap, &te));
+                }
+                CloseHandle(snap);
+            }
+        });
     } else {
         // Normal attach — no watchdog to worry about, resume immediately
         ProcessManager::ResumeProcessThreads(initialSuspend);
@@ -86,6 +123,13 @@ void App::AttachToProcess(DWORD pid) {
 
 void App::DetachFromProcess() {
     if (!processAttached) return;
+
+    // Stop thread watcher before resuming so it can't add new entries
+    // to m_suspendedGameThreads while we're clearing it
+    if (m_threadWatcher.joinable()) {
+        m_threadWatcher.request_stop();
+        m_threadWatcher.join();
+    }
 
     // Resume any permanently suspended game threads before detaching
     ProcessManager::ResumeProcessThreads(m_suspendedGameThreads);

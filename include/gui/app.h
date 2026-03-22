@@ -178,6 +178,11 @@ public:
     // ReadProcessMemory / WriteProcessMemory work fine on suspended processes.
     std::vector<HANDLE> m_suspendedGameThreads;
 
+    // Watches for newly spawned game threads and suspends them immediately.
+    // Prevents the watchdog from re-spawning on a fresh thread after we
+    // freeze the initial thread set.
+    std::jthread m_threadWatcher;
+
     // UI state
     bool showProcessSelector = true;
     bool showScanner = true;
