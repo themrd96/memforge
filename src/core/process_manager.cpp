@@ -5,6 +5,9 @@
 
 #pragma comment(lib, "advapi32.lib")
 
+// Forward declaration — defined in the direct syscall helpers section below
+static bool IsNtOpenProcessHooked();
+
 namespace memforge {
 
 // ─── Helpers ───────────────────────────────────────────────
