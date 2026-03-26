@@ -333,8 +333,8 @@ bool MemoryScanner::FirstScan(const ScanConfig& config, ScanProgressCallback pro
     std::vector<ScanResult> allResults;
 
     // Use multiple threads for large scans
-    unsigned int numThreads = std::min((unsigned int)filteredRegions.size(),
-                                       std::thread::hardware_concurrency());
+    unsigned int numThreads = (std::min)((unsigned int)filteredRegions.size(),
+                                         std::thread::hardware_concurrency());
     if (numThreads == 0) numThreads = 1;
 
     if (numThreads == 1 || filteredRegions.size() < 4) {

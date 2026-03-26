@@ -43,6 +43,7 @@ void DrawTrainerBuilder(class App& app);
 void DrawSnapshots(class App& app);
 void DrawUndoHistory(class App& app);
 void DrawAntiCheat(class App& app);
+void DrawManualMapperPanel(class App& app);
 
 class App {
 public:

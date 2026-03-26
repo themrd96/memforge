@@ -180,7 +180,7 @@ void DrawManualMapperPanel(App& app) {
     float logHeight = ImGui::GetContentRegionAvail().y - 8.0f;
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.08f, 0.08f, 0.10f, 1.0f));
     if (ImGui::BeginChild("##mapperlog", ImVec2(0, logHeight),
-                          true, ImGuiWindowFlags_HorizontalScrollbar)) {
+                          ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar)) {
         for (const auto& line : app.mapperLog) {
             if (line.size() >= 5 && line.substr(0, 5) == "[ERR]") {
                 ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s", line.c_str());

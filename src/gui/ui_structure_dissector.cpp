@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <cmath>
+#include <algorithm>
 
 namespace memforge {
 
@@ -282,15 +283,15 @@ void DrawStructureDissector(App& app) {
         ImGui::SameLine();
         ImGui::Text("after");
 
-        app.nearbyRangeBefore = std::max(4,  std::min(app.nearbyRangeBefore, 4096));
-        app.nearbyRangeAfter  = std::max(4,  std::min(app.nearbyRangeAfter,  4096));
+        app.nearbyRangeBefore = (std::max)(4,  (std::min)(app.nearbyRangeBefore, 4096));
+        app.nearbyRangeAfter  = (std::max)(4,  (std::min)(app.nearbyRangeAfter,  4096));
 
         // Alignment
         ImGui::Text("Step (bytes):");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(60);
         ImGui::InputInt("##Align", &app.nearbyAlignment, 1);
-        app.nearbyAlignment = std::max(1, std::min(app.nearbyAlignment, 8));
+        app.nearbyAlignment = (std::max)(1, (std::min)(app.nearbyAlignment, 8));
 
         // Value filter
         ImGui::SameLine();

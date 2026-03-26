@@ -1,4 +1,5 @@
 #include "core/process_manager.h"
+#include <memory>
 #include <sstream>
 #include <unordered_map>
 #include <winternl.h>

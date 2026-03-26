@@ -12,8 +12,6 @@
 
 namespace memforge {
 
-extern void DrawManualMapperPanel(App& app);
-
 App::App() {
     scanConfig.valueType = ValueType::Int32;
     scanConfig.scanMode = ScanMode::ExactValue;

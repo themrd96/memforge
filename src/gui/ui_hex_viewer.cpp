@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cctype>
 #include <vector>
+#include <algorithm>
 
 namespace memforge {
 
@@ -44,12 +45,12 @@ void DrawHexViewer(App& app) {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(80);
     ImGui::InputInt("Columns", &app.hexViewColumns);
-    app.hexViewColumns = std::max(4, std::min(32, app.hexViewColumns));
+    app.hexViewColumns = (std::max)(4, (std::min)(32, app.hexViewColumns));
 
     ImGui::SameLine();
     ImGui::SetNextItemWidth(80);
     ImGui::InputInt("Rows", &app.hexViewRows);
-    app.hexViewRows = std::max(4, std::min(128, app.hexViewRows));
+    app.hexViewRows = (std::max)(4, (std::min)(128, app.hexViewRows));
 
     // Navigation
     ImGui::SameLine();
