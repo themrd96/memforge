@@ -122,37 +122,66 @@ std::string StructDefinition::GenerateCppStruct() const {
 FieldType StructDefinition::GuessType(const uint8_t* data, size_t maxLen) {
     if (maxLen < 4) return FieldType::UInt8;
 
-    // Check if it looks like a pointer (in typical user-space range)
+    // Check int32 FIRST — most game values are integers
+    int32_t ival;
+    std::memcpy(&ival, data, 4);
+
+    // Check if all upper 4 bytes are zero — if so, this is likely a 4-byte value, not a pointer
+    bool upperBytesZero = true;
     if (maxLen >= 8) {
+        for (size_t i = 4; i < 8; i++) {
+            if (data[i] != 0) { upperBytesZero = false; break; }
+        }
+    }
+
+    // Small integer values (covers most game values like health, gold, ammo, counts)
+    if (ival >= -10000000 && ival <= 10000000 && upperBytesZero) {
+        return FieldType::Int32;
+    }
+
+    // Check if it looks like a float (but not if it also looks like a reasonable int)
+    float fval;
+    std::memcpy(&fval, data, 4);
+    if (std::isfinite(fval) && fval != 0.0f &&
+        std::fabs(fval) > 0.001f && std::fabs(fval) < 1e8f &&
+        upperBytesZero) {
+        // Only classify as float if the int interpretation looks weird
+        // (e.g. very large int but reasonable float)
+        if (ival < -10000000 || ival > 10000000) {
+            return FieldType::Float;
+        }
+    }
+
+    // Check if it looks like a pointer — must have non-zero upper bytes
+    // and fall in user-space range. Only check if upper bytes are NOT all zero.
+    if (maxLen >= 8 && !upperBytesZero) {
         uint64_t val64;
         std::memcpy(&val64, data, 8);
-        if (val64 > 0x10000 && val64 < 0x00007FFFFFFFFFFF) {
+        // Typical x64 user-space pointer: 0x00007FF000000000 range or
+        // heap pointers in 0x0000010000000000+ range
+        // Key: at least one of bytes 4-7 must be non-zero (already checked)
+        // and the value should look like a valid address
+        if (val64 > 0x100000 && val64 < 0x00007FFFFFFFFFFF) {
             return FieldType::Pointer;
         }
     }
 
-    // Check if it looks like a float
-    float fval;
-    std::memcpy(&fval, data, 4);
-    if (std::isfinite(fval) && fval != 0.0f && std::fabs(fval) > 1e-10f && std::fabs(fval) < 1e10f) {
-        return FieldType::Float;
-    }
-
-    // Check if it looks like a small integer
-    int32_t ival;
-    std::memcpy(&ival, data, 4);
-    if (ival >= -1000000 && ival <= 1000000) {
-        return FieldType::Int32;
-    }
-
     // Check if ASCII string
     bool isString = true;
-    for (size_t i = 0; i < (std::min)(maxLen, (size_t)8); i++) {
+    int strLen = 0;
+    for (size_t i = 0; i < (std::min)(maxLen, (size_t)16); i++) {
         if (data[i] == 0) break;
         if (data[i] < 32 || data[i] > 126) { isString = false; break; }
+        strLen++;
     }
-    if (isString && data[0] >= 32) {
+    if (isString && strLen >= 3 && data[0] >= 32) {
         return FieldType::String;
+    }
+
+    // Fallback: check float with looser criteria
+    if (std::isfinite(fval) && fval != 0.0f &&
+        std::fabs(fval) > 1e-6f && std::fabs(fval) < 1e10f) {
+        return FieldType::Float;
     }
 
     return FieldType::Int32;
@@ -313,10 +342,20 @@ std::vector<NearbyResult> StructureDissector::NearbySearch(
         std::memcpy(&r.asDouble, buf.data() + off, 8);
 
         if (filterEnabled) {
-            bool int32Match  = (std::fabs((float)r.asInt32 - filterValue) <= filterTolerance);
-            bool floatMatch  = std::isfinite(r.asFloat) &&
-                               (std::fabs(r.asFloat - filterValue) <= filterTolerance);
-            if (!int32Match && !floatMatch) continue;
+            // Check int32 and uint32 as the primary match — these are what
+            // users expect when filtering by value range
+            bool int32Match  = (r.asInt32  >= (int32_t)(filterValue - filterTolerance) &&
+                                r.asInt32  <= (int32_t)(filterValue + filterTolerance));
+            bool uint32Match = (r.asUInt32 >= (uint32_t)(std::max)(0.0f, filterValue - filterTolerance) &&
+                                r.asUInt32 <= (uint32_t)(filterValue + filterTolerance));
+            // Only check float if the value actually looks like a valid float
+            // (not subnormal, not NaN, and in a reasonable game-value range)
+            bool floatMatch  = false;
+            if (std::isfinite(r.asFloat) && std::fabs(r.asFloat) < 1e8f &&
+                std::fabs(r.asFloat) > 1e-4f) {
+                floatMatch = (std::fabs(r.asFloat - filterValue) <= filterTolerance);
+            }
+            if (!int32Match && !uint32Match && !floatMatch) continue;
         }
 
         results.push_back(r);
